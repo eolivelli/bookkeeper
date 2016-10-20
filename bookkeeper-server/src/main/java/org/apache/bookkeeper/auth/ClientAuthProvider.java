@@ -43,8 +43,7 @@ public interface ClientAuthProvider {
          * payload, so that the client can decode auth messages
          * it receives from the server.
          */
-        void init(ClientConfiguration conf,
-                  ExtensionRegistry registry) throws IOException;
+        void init(ClientConfiguration conf) throws IOException;
 
         /**
          * Create a new instance of a client auth provider.
@@ -77,7 +76,7 @@ public interface ClientAuthProvider {
      * cb may not be called if authentication is not requires. In
      * this case, completeCb should be called.
      */
-    void init(GenericCallback<AuthMessage> cb);
+    void init(GenericCallback<AuthMessageData> cb);
 
     /**
      * Process a response from the server. cb will receive the next
@@ -85,5 +84,5 @@ public interface ClientAuthProvider {
      * to send to the server, cb should not be called, and completeCb
      * must be called instead.
      */
-    void process(AuthMessage m, GenericCallback<AuthMessage> cb);
+    void process(AuthMessageData m, GenericCallback<AuthMessageData> cb);
 }

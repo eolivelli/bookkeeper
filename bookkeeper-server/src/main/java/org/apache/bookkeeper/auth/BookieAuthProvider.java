@@ -43,8 +43,7 @@ public interface BookieAuthProvider {
          * payload, so that the server can decode auth messages
          * it receives from the client.
          */
-        void init(ServerConfiguration conf,
-                  ExtensionRegistry registry) throws IOException;
+        void init(ServerConfiguration conf) throws IOException;
 
         /**
          * Create a new instance of a bookie auth provider.
@@ -79,5 +78,5 @@ public interface BookieAuthProvider {
      * to send to the client, cb should not be called, and completeCb
      * must be called instead.
      */
-    void process(AuthMessage m, GenericCallback<AuthMessage> cb);
+    void process(AuthMessageData m, GenericCallback<AuthMessageData> cb);
 }

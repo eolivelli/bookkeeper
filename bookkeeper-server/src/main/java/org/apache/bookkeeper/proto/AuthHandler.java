@@ -20,13 +20,16 @@
  */
 package org.apache.bookkeeper.proto;
 
+import com.google.protobuf.ByteString;
 import java.io.IOException;
 import java.net.Inet4Address;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
+import java.util.Arrays;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
+import org.apache.bookkeeper.auth.AuthMessageData;
 
 import org.apache.bookkeeper.auth.BookieAuthProvider;
 import org.apache.bookkeeper.auth.ClientAuthProvider;
@@ -94,7 +97,11 @@ class AuthHandler {
                 BookieProtocol.AuthRequest req = (BookieProtocol.AuthRequest)event;
                 assert (req.getOpCode() == BookieProtocol.AUTH);
                 if (checkAuthPlugin(req.getAuthMessage(), ctx.getChannel())) {
-                    authProvider.process(req.getAuthMessage(),
+                    byte[] payload = req
+                        .getAuthMessage()
+                        .getExtension(BookkeeperProtocol.payload)
+                        .toByteArray();
+                    authProvider.process(AuthMessageData.wrap(payload),
                                 new AuthResponseCallbackLegacy(req, ctx.getChannel()));
                 } else {
                     ctx.getChannel().close();
@@ -119,8 +126,12 @@ class AuthHandler {
                 if (req.getHeader().getOperation() == BookkeeperProtocol.OperationType.AUTH
                         && req.hasAuthRequest()
                         && checkAuthPlugin(req.getAuthRequest(), ctx.getChannel())) {
-                    authProvider.process(req.getAuthRequest(),
-                                         new AuthResponseCallback(req, ctx.getChannel()));
+                    byte[] payload = req
+                        .getAuthRequest()
+                        .getExtension(BookkeeperProtocol.payload)
+                        .toByteArray();
+                    authProvider.process(AuthMessageData.wrap(payload),
+                                         new AuthResponseCallback(req, ctx.getChannel(), authProviderFactory.getPluginName()));
                 } else {
                     BookkeeperProtocol.Response.Builder builder
                         = BookkeeperProtocol.Response.newBuilder()
@@ -146,7 +157,7 @@ class AuthHandler {
             return true;
         }
 
-        static class AuthResponseCallbackLegacy implements GenericCallback<AuthMessage> {
+        static class AuthResponseCallbackLegacy implements GenericCallback<AuthMessageData> {
             final BookieProtocol.AuthRequest req;
             final Channel channel;
 
@@ -155,27 +166,35 @@ class AuthHandler {
                 this.channel = channel;
             }
 
-            public void operationComplete(int rc, AuthMessage newam) {
+            public void operationComplete(int rc, AuthMessageData newam) {
                 if (rc != BKException.Code.OK) {
                     LOG.error("Error processing auth message, closing connection");
                     channel.close();
                     return;
                 }
+                AuthMessage message =
+                    AuthMessage
+                        .newBuilder()
+                        .setAuthPluginName(req.authMessage.getAuthPluginName())
+                        .setExtension(BookkeeperProtocol.payload, ByteString.copyFrom(newam.getData()))
+                        .build();
                 channel.write(new BookieProtocol.AuthResponse(req.getProtocolVersion(),
-                                                              newam));
+                                                              message));
             }
         }
 
-        static class AuthResponseCallback implements GenericCallback<AuthMessage> {
+        static class AuthResponseCallback implements GenericCallback<AuthMessageData> {
             final BookkeeperProtocol.Request req;
             final Channel channel;
+            final String pluginName;
 
-            AuthResponseCallback(BookkeeperProtocol.Request req, Channel channel) {
+            AuthResponseCallback(BookkeeperProtocol.Request req, Channel channel, String pluginName) {
                 this.req = req;
                 this.channel = channel;
+                this.pluginName = pluginName;
             }
 
-            public void operationComplete(int rc, AuthMessage newam) {
+            public void operationComplete(int rc, AuthMessageData newam) {
                 BookkeeperProtocol.Response.Builder builder
                     = BookkeeperProtocol.Response.newBuilder()
                     .setHeader(req.getHeader());
@@ -188,8 +207,14 @@ class AuthHandler {
                     channel.close();
                     return;
                 } else {
+                    AuthMessage message =
+                        AuthMessage
+                            .newBuilder()
+                            .setAuthPluginName(pluginName)
+                            .setExtension(BookkeeperProtocol.payload, ByteString.copyFrom(newam.getData()))
+                            .build();
                     builder.setStatus(BookkeeperProtocol.StatusCode.EOK)
-                        .setAuthResponse(newam);
+                        .setAuthResponse(message);
                     channel.write(builder.build());
                 }
             }
@@ -200,6 +225,7 @@ class AuthHandler {
             public void operationComplete(int rc, Void v) {
                 if (rc == BKException.Code.OK) {
                     authenticated = true;
+                    LOG.error("Authentication success on server side");
                 } else {
                     LOG.debug("Authentication failed on server side");
                 }
@@ -238,7 +264,7 @@ class AuthHandler {
             }
 
             if (authProvider != null) {
-                authProvider.init(new AuthRequestCallback(ctx));
+                authProvider.init(new AuthRequestCallback(ctx, authProviderFactory.getPluginName()));
             }
             super.channelConnected(ctx, e);
         }
@@ -261,7 +287,9 @@ class AuthHandler {
                     } else {
                         assert (resp.hasAuthResponse());
                         BookkeeperProtocol.AuthMessage am = resp.getAuthResponse();
-                        authProvider.process(am, new AuthRequestCallback(ctx));
+                        byte[] payload = am.getExtension(BookkeeperProtocol.payload).toByteArray();
+                        authProvider.process(AuthMessageData.wrap(payload), new AuthRequestCallback(ctx,
+                            authProviderFactory.getPluginName()));
                     }
                 } else {
                     // else just drop the message,
@@ -301,20 +329,27 @@ class AuthHandler {
                                              "Auth failed with error " + errorCode)));
         }
 
-        class AuthRequestCallback implements GenericCallback<AuthMessage> {
+        class AuthRequestCallback implements GenericCallback<AuthMessageData> {
             Channel channel;
             ChannelHandlerContext ctx;
+            String pluginName;
 
-            AuthRequestCallback(ChannelHandlerContext ctx) {
+            AuthRequestCallback(ChannelHandlerContext ctx, String pluginName) {
                 this.channel = ctx.getChannel();
                 this.ctx = ctx;
+                this.pluginName = pluginName;
             }
 
-            public void operationComplete(int rc, AuthMessage newam) {
+            public void operationComplete(int rc, AuthMessageData newam) {
                 if (rc != BKException.Code.OK) {
                     authenticationError(ctx, rc);
                     return;
                 }
+                AuthMessage message = AuthMessage
+                    .newBuilder()
+                    .setAuthPluginName(pluginName)
+                    .setExtension(BookkeeperProtocol.payload, ByteString.copyFrom(newam.getData()))
+                    .build();
 
                 BookkeeperProtocol.BKPacketHeader header
                     = BookkeeperProtocol.BKPacketHeader.newBuilder()
@@ -324,7 +359,7 @@ class AuthHandler {
                 BookkeeperProtocol.Request.Builder builder
                     = BookkeeperProtocol.Request.newBuilder()
                     .setHeader(header)
-                    .setAuthRequest(newam);
+                    .setAuthRequest(message);
 
                 channel.write(builder.build());
             }

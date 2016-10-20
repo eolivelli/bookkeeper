@@ -72,7 +72,8 @@ class BookieNettyServer {
         this.requestProcessor = processor;
 
         ExtensionRegistry registry = ExtensionRegistry.newInstance();
-        authProviderFactory = AuthProviderFactoryFactory.newBookieAuthProviderFactory(conf, registry);
+        BookkeeperProtocol.registerAllExtensions(registry);
+        authProviderFactory = AuthProviderFactoryFactory.newBookieAuthProviderFactory(conf);
 
         responseEncoder = new BookieProtoEncoding.ResponseEncoder(registry);
         requestDecoder = new BookieProtoEncoding.RequestDecoder(registry);

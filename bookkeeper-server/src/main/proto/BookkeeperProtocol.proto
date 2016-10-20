@@ -132,3 +132,7 @@ message AuthMessage {
     required string authPluginName = 1;
     extensions 1000 to max;
 }
+
+extend AuthMessage {
+    optional bytes payload = 1001;
+}

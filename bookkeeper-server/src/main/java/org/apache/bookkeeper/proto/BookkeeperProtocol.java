@@ -7,6 +7,7 @@ public final class BookkeeperProtocol {
   private BookkeeperProtocol() {}
   public static void registerAllExtensions(
       com.google.protobuf.ExtensionRegistry registry) {
+    registry.add(org.apache.bookkeeper.proto.BookkeeperProtocol.payload);
   }
   /**
    * Protobuf enum {@code ProtocolVersion}
@@ -6897,6 +6898,17 @@ public final class BookkeeperProtocol {
     // @@protoc_insertion_point(class_scope:AuthMessage)
   }
 
+  public static final int PAYLOAD_FIELD_NUMBER = 1001;
+  /**
+   * <code>extend .AuthMessage { ... }</code>
+   */
+  public static final
+    com.google.protobuf.GeneratedMessage.GeneratedExtension<
+      org.apache.bookkeeper.proto.BookkeeperProtocol.AuthMessage,
+      com.google.protobuf.ByteString> payload = com.google.protobuf.GeneratedMessage
+          .newFileScopedGeneratedExtension(
+        com.google.protobuf.ByteString.class,
+        null);
   private static final com.google.protobuf.Descriptors.Descriptor
     internal_static_BKPacketHeader_descriptor;
   private static
@@ -6977,8 +6989,9 @@ public final class BookkeeperProtocol {
       "\n\003EUA\020\366\003\022\020\n\013EBADVERSION\020\367\003\022\014\n\007EFENCED\020\370\003" +
       "\022\016\n\tEREADONLY\020\371\003*c\n\rOperationType\022\016\n\nREA",
       "D_ENTRY\020\001\022\r\n\tADD_ENTRY\020\002\022\024\n\020RANGE_READ_E" +
-      "NTRY\020\003\022\023\n\017RANGE_ADD_ENTRY\020\004\022\010\n\004AUTH\020\005B\037\n" +
-      "\033org.apache.bookkeeper.protoH\001"
+      "NTRY\020\003\022\023\n\017RANGE_ADD_ENTRY\020\004\022\010\n\004AUTH\020\005:\036\n" +
+      "\007payload\022\014.AuthMessage\030\351\007 \001(\014B\037\n\033org.apa" +
+      "che.bookkeeper.protoH\001"
     };
     com.google.protobuf.Descriptors.FileDescriptor.InternalDescriptorAssigner assigner =
         new com.google.protobuf.Descriptors.FileDescriptor.    InternalDescriptorAssigner() {
@@ -7040,6 +7053,7 @@ public final class BookkeeperProtocol {
       com.google.protobuf.GeneratedMessage.FieldAccessorTable(
         internal_static_AuthMessage_descriptor,
         new java.lang.String[] { "AuthPluginName", });
+    payload.internalInit(descriptor.getExtensions().get(0));
   }
 
   // @@protoc_insertion_point(outer_class_scope)

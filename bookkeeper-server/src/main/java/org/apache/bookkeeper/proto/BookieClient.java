@@ -98,7 +98,8 @@ public class BookieClient implements PerChannelBookieClientFactory {
         this.closeLock = new ReentrantReadWriteLock();
 
         this.registry = ExtensionRegistry.newInstance();
-        this.authProviderFactory = AuthProviderFactoryFactory.newClientAuthProviderFactory(conf, registry);
+        BookkeeperProtocol.registerAllExtensions(this.registry);
+        this.authProviderFactory = AuthProviderFactoryFactory.newClientAuthProviderFactory(conf);
 
         this.statsLogger = statsLogger;
         this.numConnectionsPerBookie = conf.getNumChannelsPerBookie();
