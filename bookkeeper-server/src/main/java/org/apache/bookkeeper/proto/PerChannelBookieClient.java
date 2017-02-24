@@ -1001,6 +1001,12 @@ public class PerChannelBookieClient extends SimpleChannelHandler implements Chan
                         case READ_ENTRY:
                             handleReadResponse(response, completionValue);
                             break;
+                        case WRITE_LAC:
+                            handleWriteLacResponse(response.getWriteLacResponse(), completionValue);
+                            break;
+                        case READ_LAC:
+                            handleReadLacResponse(response.getReadLacResponse(), completionValue);
+                            break;
                         case STARTTLS:
                             handleStartTLSResponse(response, completionValue, ctx);
                             break;

@@ -148,6 +148,12 @@ public class BookieRequestProcessor implements RequestProcessor {
                             .setAuthResponse(message);
                     c.write(authResponse.build());
                     break;
+                case WRITE_LAC:
+                    processWriteLacRequestV3(r,c);
+                    break;
+                case READ_LAC:
+                    processReadLacRequestV3(r,c);
+                    break;
                 case STARTTLS:
                     processStartTLSRequestV3(r, c);
                     break;
@@ -180,6 +186,24 @@ public class BookieRequestProcessor implements RequestProcessor {
                     }
                     break;
             }
+        }
+    }
+
+     private void processWriteLacRequestV3(final BookkeeperProtocol.Request r, final Channel c) {
+        WriteLacProcessorV3 writeLac = new WriteLacProcessorV3(r, c, this);
+        if (null == writeThreadPool) {
+            writeLac.run();
+        } else {
+            writeThreadPool.submit(writeLac);
+        }
+    }
+
+    private void processReadLacRequestV3(final BookkeeperProtocol.Request r, final Channel c) {
+        ReadLacProcessorV3 readLac = new ReadLacProcessorV3(r, c, this);
+        if (null == readThreadPool) {
+            readLac.run();
+        } else {
+            readThreadPool.submit(readLac);
         }
     }
 
