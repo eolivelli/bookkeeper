@@ -400,6 +400,7 @@ public class BookieProtoEncoding {
                 try {
                     out.add(REQ_V3.decode(buffer));
                 } catch (InvalidProtocolBufferException e) {
+                    buffer.retain();
                     usingV3Protocol = false;
                     buffer.resetReaderIndex();
                     out.add(REQ_PREV3.decode(buffer));
@@ -464,6 +465,7 @@ public class BookieProtoEncoding {
                 try {
                     out.add(REP_V3.decode(buffer));
                 } catch (InvalidProtocolBufferException e) {
+                    buffer.retain();
                     usingV3Protocol = false;
                     buffer.resetReaderIndex();
                     out.add(REP_PREV3.decode(buffer));
