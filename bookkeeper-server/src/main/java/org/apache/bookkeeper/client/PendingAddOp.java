@@ -63,6 +63,7 @@ class PendingAddOp implements WriteCallback, TimerTask {
 
     LedgerHandle lh;
     boolean isRecoveryAdd = false;
+    boolean isVolatileDurablityAdd = false;
     long requestTimeNanos;
 
     final int timeoutSec;
@@ -70,7 +71,7 @@ class PendingAddOp implements WriteCallback, TimerTask {
 
     OpStatsLogger addOpLogger;
     boolean callbackTriggered = false;
-
+    
     PendingAddOp(LedgerHandle lh, AddCallback cb, Object ctx) {
         this.lh = lh;
         this.cb = cb;
@@ -90,6 +91,10 @@ class PendingAddOp implements WriteCallback, TimerTask {
         return this;
     }
 
+    void enableVolatileDurability() {
+        isVolatileDurablityAdd = true;
+    }
+
     void setEntryId(long entryId) {
         this.entryId = entryId;
         writeSet = new HashSet<Integer>(lh.distributionSchedule.getWriteSet(entryId));
@@ -103,7 +108,7 @@ class PendingAddOp implements WriteCallback, TimerTask {
         int flags = isRecoveryAdd ? BookieProtocol.FLAG_RECOVERY_ADD : BookieProtocol.FLAG_NONE;
 
         lh.bk.bookieClient.addEntry(lh.metadata.currentEnsemble.get(bookieIndex), lh.ledgerId, lh.ledgerKey, entryId, toSend,
-                this, bookieIndex, flags);
+                this, bookieIndex, flags, lh.ledgerType);
     }
 
     @Override
@@ -198,7 +203,8 @@ class PendingAddOp implements WriteCallback, TimerTask {
     }
 
     @Override
-    public void writeComplete(int rc, long ledgerId, long entryId, BookieSocketAddress addr, Object ctx) {
+    public void writeComplete(int rc, long ledgerId, long entryId, long lastAddSyncedEntry,
+        BookieSocketAddress addr, Object ctx) {
         int bookieIndex = (Integer) ctx;
 
         if (!lh.metadata.currentEnsemble.get(bookieIndex).equals(addr)) {
@@ -208,11 +214,11 @@ class PendingAddOp implements WriteCallback, TimerTask {
             }
             return;
         }
-
         // must record all acks, even if complete (completion can be undone by an ensemble change)
         boolean ackQuorum = false;
         if (BKException.Code.OK == rc) {
-            ackQuorum = ackSet.completeBookieAndCheck(bookieIndex);
+            ackQuorum = ackSet.completeBookieAndCheck(bookieIndex, lastAddSyncedEntry);
+            LOG.info("writeComplete lastAddSyncedEntry "+lastAddSyncedEntry);          
         }
 
         if (completed) {

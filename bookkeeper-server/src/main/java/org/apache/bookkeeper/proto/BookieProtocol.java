@@ -176,6 +176,9 @@ public interface BookieProtocol {
     public static final short FLAG_DO_FENCING = 0x0001;
     public static final short FLAG_RECOVERY_ADD = 0x0002;
 
+    public static final short LEDGERTYPE_PD_JOURNAL = 0;
+    public static final short LEDGERTYPE_VD_JOURNAL = 1;
+
     static class Request {
 
         final byte protocolVersion;
@@ -237,11 +240,13 @@ public interface BookieProtocol {
 
     static class AddRequest extends Request {
         final ByteBuf data;
+        final short ledgerType;
 
         public AddRequest(byte protocolVersion, long ledgerId, long entryId,
-                          short flags, byte[] masterKey, ByteBuf data) {
+                          short flags, byte[] masterKey, ByteBuf data, short ledgerType) {
             super(protocolVersion, ADDENTRY, ledgerId, entryId, flags, masterKey);
             this.data = data.retain();
+            this.ledgerType = ledgerType;
         }
 
         ByteBuf getData() {
@@ -250,6 +255,10 @@ public interface BookieProtocol {
 
         boolean isRecoveryAdd() {
             return (flags & FLAG_RECOVERY_ADD) == FLAG_RECOVERY_ADD;
+        }
+
+        public short getLedgerType() {
+            return ledgerType;
         }
 
         void release() {
@@ -291,14 +300,16 @@ public interface BookieProtocol {
         final int errorCode;
         final long ledgerId;
         final long entryId;
+        final long lastAddSyncedEntry;
 
         protected Response(byte protocolVersion, byte opCode,
-                           int errorCode, long ledgerId, long entryId) {
+                           int errorCode, long ledgerId, long entryId, long lastAddSyncedEntry) {
             this.protocolVersion = protocolVersion;
             this.opCode = opCode;
             this.errorCode = errorCode;
             this.ledgerId = ledgerId;
             this.entryId = entryId;
+            this.lastAddSyncedEntry = lastAddSyncedEntry;
         }
 
         byte getProtocolVersion() {
@@ -321,6 +332,10 @@ public interface BookieProtocol {
             return errorCode;
         }
 
+        long getLastAddSyncedEntry() {
+            return lastAddSyncedEntry;
+        }
+
         @Override
         public String toString() {
             return String.format("Op(%d)[Ledger:%d,Entry:%d,errorCode=%d]",
@@ -332,12 +347,12 @@ public interface BookieProtocol {
         final ByteBuf data;
 
         ReadResponse(byte protocolVersion, int errorCode, long ledgerId, long entryId) {
-            super(protocolVersion, READENTRY, errorCode, ledgerId, entryId);
+            super(protocolVersion, READENTRY, errorCode, ledgerId, entryId, -1);
             this.data = Unpooled.EMPTY_BUFFER;
         }
 
         ReadResponse(byte protocolVersion, int errorCode, long ledgerId, long entryId, ByteBuf data) {
-            super(protocolVersion, READENTRY, errorCode, ledgerId, entryId);
+            super(protocolVersion, READENTRY, errorCode, ledgerId, entryId, -1);
             this.data = data;
         }
 
@@ -351,15 +366,15 @@ public interface BookieProtocol {
     }
 
     static class AddResponse extends Response {
-        AddResponse(byte protocolVersion, int errorCode, long ledgerId, long entryId) {
-            super(protocolVersion, ADDENTRY, errorCode, ledgerId, entryId);
+        AddResponse(byte protocolVersion, int errorCode, long ledgerId, long entryId, long lastAddSyncedEntry) {
+            super(protocolVersion, ADDENTRY, errorCode, ledgerId, entryId, lastAddSyncedEntry);
         }
     }
     
     static class ErrorResponse extends Response {
         ErrorResponse(byte protocolVersion, byte opCode, int errorCode,
                       long ledgerId, long entryId) {
-            super(protocolVersion, opCode, errorCode, ledgerId, entryId);
+            super(protocolVersion, opCode, errorCode, ledgerId, entryId, -1);
         }
     }
 
@@ -367,7 +382,7 @@ public interface BookieProtocol {
         final AuthMessage authMessage;
 
         AuthResponse(byte protocolVersion, AuthMessage authMessage) {
-            super(protocolVersion, AUTH, EOK, -1, -1);
+            super(protocolVersion, AUTH, EOK, -1, -1, -1);
             this.authMessage = authMessage;
         }
 
