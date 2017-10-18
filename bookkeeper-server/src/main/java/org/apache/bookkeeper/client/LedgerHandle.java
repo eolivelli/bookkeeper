@@ -402,6 +402,14 @@ public class LedgerHandle implements WriteHandle {
         return metadata.isClosed();
     }
 
+    /**
+     * Is ensemble change supported ?
+     * @return
+     */
+    boolean isDelayEnsembleChangeSupported() {
+        return ledgerType.equals(LedgerType.PD_JOURNAL);
+    }
+
     void asyncCloseInternal(final CloseCallback cb, final Object ctx, final int rc) {
         try {
             doAsyncCloseInternal(cb, ctx, rc);

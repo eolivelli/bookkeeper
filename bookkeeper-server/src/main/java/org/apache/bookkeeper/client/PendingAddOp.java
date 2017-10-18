@@ -259,7 +259,7 @@ class PendingAddOp implements WriteCallback, TimerTask {
             lh.handleUnrecoverableErrorDuringAdd(rc);
             return;
         default:
-            if (lh.bk.delayEnsembleChange) {
+            if (lh.bk.isDelayEnsembleChange()) {
                 if (ackSet.failBookieAndCheck(bookieIndex, addr) || rc == BKException.Code.WriteOnReadOnlyBookieException) {
                     Map<Integer, BookieSocketAddress> failedBookies = ackSet.getFailedBookies();
                     LOG.warn("Failed to write entry ({}, {}) to bookies {}, handling failures.",

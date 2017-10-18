@@ -142,6 +142,7 @@ public abstract class MockBookKeeperTestCase {
 
         when(bk.getCloseLock()).thenReturn(new ReentrantReadWriteLock());
         when(bk.isClosed()).thenReturn(false);
+        when(bk.isDelayEnsembleChange()).thenReturn(false);
         when(bk.getBookieWatcher()).thenReturn(bookieWatcher);
         when(bk.getExplicitLacInterval()).thenReturn(0);
         when(bk.getMainWorkerPool()).thenReturn(executor);
