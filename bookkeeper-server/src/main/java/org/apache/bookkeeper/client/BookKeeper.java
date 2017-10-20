@@ -103,6 +103,7 @@ public class BookKeeper implements org.apache.bookkeeper.client.api.BookKeeper {
     private final StatsLogger statsLogger;
     private OpStatsLogger createOpLogger;
     private OpStatsLogger openOpLogger;
+    private OpStatsLogger syncOpLogger;
     private OpStatsLogger deleteOpLogger;
     private OpStatsLogger recoverOpLogger;
     private OpStatsLogger readOpLogger;
@@ -622,6 +623,11 @@ public class BookKeeper implements org.apache.bookkeeper.client.api.BookKeeper {
     @VisibleForTesting
     boolean isReorderReadSequence() {
         return reorderReadSequence;
+    }
+
+    @VisibleForTesting
+    boolean isDelayEnsembleChange() {
+        return delayEnsembleChange;
     }
 
     /**
@@ -1384,6 +1390,7 @@ public class BookKeeper implements org.apache.bookkeeper.client.api.BookKeeper {
         createOpLogger = stats.getOpStatsLogger(BookKeeperClientStats.CREATE_OP);
         deleteOpLogger = stats.getOpStatsLogger(BookKeeperClientStats.DELETE_OP);
         openOpLogger = stats.getOpStatsLogger(BookKeeperClientStats.OPEN_OP);
+        syncOpLogger = stats.getOpStatsLogger(BookKeeperClientStats.SYNC_OP);
         recoverOpLogger = stats.getOpStatsLogger(BookKeeperClientStats.RECOVER_OP);
         readOpLogger = stats.getOpStatsLogger(BookKeeperClientStats.READ_OP);
         readLacAndEntryOpLogger = stats.getOpStatsLogger(BookKeeperClientStats.READ_LAST_CONFIRMED_AND_ENTRY);
@@ -1397,6 +1404,7 @@ public class BookKeeper implements org.apache.bookkeeper.client.api.BookKeeper {
 
     OpStatsLogger getCreateOpLogger() { return createOpLogger; }
     OpStatsLogger getOpenOpLogger() { return openOpLogger; }
+    OpStatsLogger getSyncOpLogger() { return syncOpLogger; }
     OpStatsLogger getDeleteOpLogger() { return deleteOpLogger; }
     OpStatsLogger getRecoverOpLogger() { return recoverOpLogger; }
     OpStatsLogger getReadOpLogger() { return readOpLogger; }
