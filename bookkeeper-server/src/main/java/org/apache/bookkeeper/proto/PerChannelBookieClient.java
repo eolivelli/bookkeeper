@@ -478,7 +478,7 @@ public class PerChannelBookieClient extends ChannelInboundHandlerAdapter {
 
     }
 
-    void sync(final long ledgerId,
+    void sync(final long ledgerId, final byte[] masterKey,
               BookkeeperInternalCallbacks.SyncCallback cb, final Object ctx) {
         final long txnId = getTxnId();
         final CompletionKey completionKey = new V3CompletionKey(txnId,
@@ -489,10 +489,11 @@ public class PerChannelBookieClient extends ChannelInboundHandlerAdapter {
         // Build the request
         BKPacketHeader.Builder headerBuilder = BKPacketHeader.newBuilder()
                 .setVersion(ProtocolVersion.VERSION_THREE)
-                .setOperation(OperationType.WRITE_LAC)
+                .setOperation(OperationType.SYNC)
                 .setTxnId(txnId);
         SyncRequest.Builder syncBuilder = SyncRequest.newBuilder()
-                .setLedgerId(ledgerId);
+                .setLedgerId(ledgerId)
+                .setMasterKey(ByteString.copyFrom(masterKey));
 
         final Request syncRequest = Request.newBuilder()
                 .setHeader(headerBuilder)

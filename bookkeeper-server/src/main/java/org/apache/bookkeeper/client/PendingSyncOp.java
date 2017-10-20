@@ -58,7 +58,7 @@ class PendingSyncOp implements BookkeeperInternalCallbacks.SyncCallback {
 
     void sendSyncRequest(int bookieIndex) {
         lh.bk.getBookieClient().sync(lh.metadata.currentEnsemble.get(bookieIndex), lh.ledgerId,
-                                     this, bookieIndex);
+                                     lh.ledgerKey, this, bookieIndex);
     }
 
     void initiate() {

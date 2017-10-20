@@ -133,7 +133,7 @@ public class BookkeeperInternalCallbacks {
      * Such calls are for replies of sync operations
      */
     public interface SyncCallback {
-        void syncComplete(int rc, long ledgerId, long lastSyncedEntryId, BookieSocketAddress addr, Object ctx);
+        void syncComplete(int rc, long ledgerId, long lastAddSynced, BookieSocketAddress addr, Object ctx);
     }
 
     /**
