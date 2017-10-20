@@ -21,9 +21,9 @@
 
 package org.apache.bookkeeper.bookie;
 
+import com.google.common.base.Preconditions;
 import com.google.common.base.Stopwatch;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -33,14 +33,18 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import org.apache.bookkeeper.bookie.LedgerDirsManager.NoWritableLedgerDirException;
 import org.apache.bookkeeper.conf.ServerConfiguration;
+import org.apache.bookkeeper.net.BookieSocketAddress;
 import org.apache.bookkeeper.proto.BookieProtocol;
+import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.SyncCallback;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.WriteCallback;
+import org.apache.bookkeeper.proto.DataFormats.LedgerType;
 import org.apache.bookkeeper.stats.Counter;
 import org.apache.bookkeeper.stats.NullStatsLogger;
 import org.apache.bookkeeper.stats.OpStatsLogger;
@@ -272,20 +276,37 @@ public class Journal extends BookieCriticalThread implements CheckpointSource {
      * Journal Entry to Record.
      */
     private class QueueEntry implements Runnable {
-        ByteBuf entry;
-        long ledgerId;
-        long entryId;
-        WriteCallback cb;
-        Object ctx;
-        long enqueueTime;
+        final ByteBuf entry;
+        final long ledgerId;
+        final long entryId;
+        final WriteCallback cb;
+        final Object ctx;
+        final long enqueueTime;
+        final LedgerType ledgerType;
+        long lastAddSynced = -1;
 
-        QueueEntry(ByteBuf entry, long ledgerId, long entryId, WriteCallback cb, Object ctx, long enqueueTime) {
-            this.entry = entry.duplicate();
+        QueueEntry(ByteBuf entry, long ledgerId, long entryId, WriteCallback cb, Object ctx, long enqueueTime,
+                   LedgerType ledgerType) {
+            assert entry != null || entryId == Bookie.METAENTRY_ID_SYNC_KEY;
+            this.entry = entry != null ? entry.duplicate() : null;
             this.cb = cb;
             this.ctx = ctx;
             this.ledgerId = ledgerId;
             this.entryId = entryId;
             this.enqueueTime = enqueueTime;
+            this.ledgerType = ledgerType;
+        }
+
+        boolean isExecuteCallbackAfterSynch() {
+            return ledgerType == LedgerType.PD_JOURNAL;
+        }
+
+        boolean isExecuteCallbackAfterWrite() {
+            return ledgerType == LedgerType.VD_JOURNAL;
+        }
+
+        boolean isSyncLedgerMetaEntry() {
+            return entry == null;
         }
 
         @Override
@@ -294,9 +315,7 @@ public class Journal extends BookieCriticalThread implements CheckpointSource {
                 LOG.debug("Acknowledge Ledger: {}, Entry: {}", ledgerId, entryId);
             }
             journalAddEntryStats.registerSuccessfulEvent(MathUtils.elapsedNanos(enqueueTime), TimeUnit.NANOSECONDS);
-            // we are using lastAddSyncedEntry = -1 as mock implementation, next commits will provide an implementation
-            final long lastSyncedEntryId = BookieProtocol.INVALID_ENTRY_ID;
-            cb.writeComplete(0, ledgerId, entryId, lastSyncedEntryId, null, ctx);
+            cb.writeComplete(0, ledgerId, entryId, lastAddSynced, null, ctx);
         }
     }
 
@@ -339,7 +358,18 @@ public class Journal extends BookieCriticalThread implements CheckpointSource {
 
                 // Notify the waiters that the force write succeeded
                 for (QueueEntry e : this.forceWriteWaiters) {
-                    cbThreadPool.execute(e);
+                    if (e.ledgerId >= 0 && e.entryId >= 0) {
+                        handleLastAddSynced(e);
+                    } else if (e.isSyncLedgerMetaEntry()) {
+                        e.lastAddSynced = getSyncCursorForLedger(e.ledgerId).getCurrentMinAddSynced();
+                    }
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("entry "+e.ledgerId+", "+e.entryId+
+                                  " written to journal, e.lastAddSyncedEntry:"+e.lastAddSynced);
+                    }
+                    if (e.isExecuteCallbackAfterSynch()) {
+                        cbThreadPool.execute(e);
+                    }
                 }
 
                 return this.forceWriteWaiters.size();
@@ -362,6 +392,24 @@ public class Journal extends BookieCriticalThread implements CheckpointSource {
                 }
             }
         }
+    }
+
+    private void handleLastAddSynced(QueueEntry e) {
+        updateLastAddSynced(e.ledgerId, e.entryId);
+        if (LOG.isDebugEnabled()) {
+            // this code has side effects, it creates SyncCursor if it does not exist
+            Long actualLastAddSynced = getSyncCursorForLedger(e.ledgerId).getCurrentMinAddSynced();
+            if (e.isSyncLedgerMetaEntry()) {
+                LOG.debug("sync - lastAddSynced for {} is {}", e.ledgerId, actualLastAddSynced);
+            } else {
+                LOG.debug("lastAddSynced for {} now is {}", e.ledgerId, actualLastAddSynced);
+            }
+        }
+    }
+
+    void updateLastAddSynced(long ledgerId, long entryId) {
+        Preconditions.checkArgument(entryId != Bookie.METAENTRY_ID_SYNC_KEY, "entry Id must not be METAENTRY_ID_SYNC_KEY");
+        getSyncCursorForLedger(ledgerId).update(entryId);
     }
 
     /**
@@ -510,8 +558,9 @@ public class Journal extends BookieCriticalThread implements CheckpointSource {
     private final ExecutorService cbThreadPool;
 
     // journal entry queue to commit
-    final LinkedBlockingQueue<QueueEntry> queue = new LinkedBlockingQueue<QueueEntry>();
-    final LinkedBlockingQueue<ForceWriteRequest> forceWriteRequests = new LinkedBlockingQueue<ForceWriteRequest>();
+    final LinkedBlockingQueue<QueueEntry> queue = new LinkedBlockingQueue<>();
+    final LinkedBlockingQueue<ForceWriteRequest> forceWriteRequests = new LinkedBlockingQueue<>();
+    final ConcurrentHashMap<Long, SyncCursor> lastAddSynched = new ConcurrentHashMap<>();
 
     volatile boolean running = true;
     private final LedgerDirsManager ledgerDirsManager;
@@ -754,22 +803,28 @@ public class Journal extends BookieCriticalThread implements CheckpointSource {
         }
     }
 
-    public void logAddEntry(ByteBuffer entry, WriteCallback cb, Object ctx) {
-        logAddEntry(Unpooled.wrappedBuffer(entry), cb, ctx);
-    }
-
     /**
      * record an add entry operation in journal.
      */
-    public void logAddEntry(ByteBuf entry, WriteCallback cb, Object ctx) {
+    public void logAddEntry(ByteBuf entry, LedgerType ledgerType, WriteCallback cb, Object ctx) {
         long ledgerId = entry.getLong(entry.readerIndex() + 0);
         long entryId = entry.getLong(entry.readerIndex() + 8);
         journalQueueSize.inc();
 
         //Retain entry until it gets written to journal
         entry.retain();
-        queue.add(new QueueEntry(entry, ledgerId, entryId, cb, ctx, MathUtils.nowInNano()));
+        queue.add(new QueueEntry(entry, ledgerId, entryId, cb, ctx, MathUtils.nowInNano(), ledgerType));
     }
+
+    public void syncLedger(long ledgerId, SyncCallback cb, Object ctx) {
+        journalQueueSize.inc();
+        final WriteCallback adapter = (int rc, long ledgerId1, long entryId1,
+            long lastAddSyncedEntry, BookieSocketAddress addr, Object ctx1) -> {
+            cb.syncComplete(rc, ledgerId1, lastAddSyncedEntry, addr, ctx1);
+        };
+        queue.add(new QueueEntry(null, ledgerId, Bookie.METAENTRY_ID_SYNC_KEY, adapter, ctx, MathUtils.nowInNano(),
+            LedgerType.PD_JOURNAL));
+}
 
     /**
      * Get the length of journal entries queue.
@@ -902,6 +957,16 @@ public class Journal extends BookieCriticalThread implements CheckpointSource {
                             }
                             journalFlushWatcher.reset().start();
                             bc.flush(false);
+                            for (QueueEntry ve : toFlush) {
+                                if (ve.isExecuteCallbackAfterWrite()) {
+                                    ve.lastAddSynced = getSyncCursorForLedger(ve.ledgerId).getCurrentMinAddSynced();
+                                    if (LOG.isDebugEnabled()) {
+                                        LOG.debug("volatile entry "+ve.ledgerId+" - "+ve.entryId+" flushed"
+                                        + " to disk piggy back lastAddSyncedEntry:"+ve.lastAddSynced);
+                                    }
+                                    cbThreadPool.execute(ve);
+                                }
+                            }
                             lastFlushPosition = bc.position();
                             journalFlushStats.registerSuccessfulEvent(
                                     journalFlushWatcher.stop().elapsed(TimeUnit.NANOSECONDS), TimeUnit.NANOSECONDS);
@@ -939,26 +1004,27 @@ public class Journal extends BookieCriticalThread implements CheckpointSource {
                     continue;
                 }
 
-                journalWriteBytes.add(qe.entry.readableBytes());
-                journalQueueSize.dec();
+                if (!qe.isSyncLedgerMetaEntry()) {
+                    journalWriteBytes.add(qe.entry.readableBytes());
+                    journalQueueSize.dec();
 
-                batchSize += (4 + qe.entry.readableBytes());
+                    batchSize += (4 + qe.entry.readableBytes());
 
-                lenBuff.clear();
-                lenBuff.putInt(qe.entry.readableBytes());
-                lenBuff.flip();
+                    lenBuff.clear();
+                    lenBuff.putInt(qe.entry.readableBytes());
+                    lenBuff.flip();
 
-                // preAlloc based on size
-                logFile.preAllocIfNeeded(4 + qe.entry.readableBytes());
+                    // preAlloc based on size
+                    logFile.preAllocIfNeeded(4 + qe.entry.readableBytes());
 
-                //
-                // we should be doing the following, but then we run out of
-                // direct byte buffers
-                // logFile.write(new ByteBuffer[] { lenBuff, qe.entry });
-                bc.write(lenBuff);
-                bc.write(qe.entry.nioBuffer());
-                qe.entry.release();
-
+                    //
+                    // we should be doing the following, but then we run out of
+                    // direct byte buffers
+                    // logFile.write(new ByteBuffer[] { lenBuff, qe.entry });
+                    bc.write(lenBuff);
+                    bc.write(qe.entry.nioBuffer());
+                    qe.entry.release();
+                }
                 toFlush.add(qe);
                 qe = null;
             }
@@ -977,6 +1043,11 @@ public class Journal extends BookieCriticalThread implements CheckpointSource {
             IOUtils.close(LOG, logFile);
         }
         LOG.info("Journal exited loop!");
+    }
+
+    private SyncCursor getSyncCursorForLedger(long ledgerId) {
+        return lastAddSynched
+            .computeIfAbsent(ledgerId, s-> new SyncCursor());
     }
 
     /**

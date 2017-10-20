@@ -60,10 +60,11 @@ import static org.apache.bookkeeper.bookie.BookKeeperServerStats.READ_ENTRY_REQU
 import static org.apache.bookkeeper.bookie.BookKeeperServerStats.READ_ENTRY_SCHEDULING_DELAY;
 import static org.apache.bookkeeper.bookie.BookKeeperServerStats.READ_LAC_REQUEST;
 import static org.apache.bookkeeper.bookie.BookKeeperServerStats.READ_LAST_ENTRY_NOENTRY_ERROR;
-import static org.apache.bookkeeper.bookie.BookKeeperServerStats.WRITE_LAC;
 import static org.apache.bookkeeper.bookie.BookKeeperServerStats.READ_LAC;
 import static org.apache.bookkeeper.bookie.BookKeeperServerStats.WRITE_LAC;
 import static org.apache.bookkeeper.bookie.BookKeeperServerStats.GET_BOOKIE_INFO;
+import static org.apache.bookkeeper.bookie.BookKeeperServerStats.SYNC;
+import static org.apache.bookkeeper.bookie.BookKeeperServerStats.SYNC_REQUEST;
 import static org.apache.bookkeeper.bookie.BookKeeperServerStats.WRITE_LAC_REQUEST;
 
 public class BookieRequestProcessor implements RequestProcessor {
@@ -125,6 +126,8 @@ public class BookieRequestProcessor implements RequestProcessor {
     final Counter readLastEntryNoEntryErrorCounter;
     final OpStatsLogger writeLacRequestStats;
     final OpStatsLogger writeLacStats;
+    final OpStatsLogger syncRequestStats;
+    final OpStatsLogger syncStats;
     final OpStatsLogger readLacRequestStats;
     final OpStatsLogger readLacStats;
     final OpStatsLogger getBookieInfoRequestStats;
@@ -168,6 +171,8 @@ public class BookieRequestProcessor implements RequestProcessor {
         this.writeLacStats = statsLogger.getOpStatsLogger(WRITE_LAC);
         this.writeLacRequestStats = statsLogger.getOpStatsLogger(WRITE_LAC_REQUEST);
         this.readLacStats = statsLogger.getOpStatsLogger(READ_LAC);
+        this.syncRequestStats = statsLogger.getOpStatsLogger(SYNC_REQUEST);
+        this.syncStats = statsLogger.getOpStatsLogger(SYNC);
         this.readLacRequestStats = statsLogger.getOpStatsLogger(READ_LAC_REQUEST);
         this.getBookieInfoStats = statsLogger.getOpStatsLogger(GET_BOOKIE_INFO);
         this.getBookieInfoRequestStats = statsLogger.getOpStatsLogger(GET_BOOKIE_INFO_REQUEST);
@@ -224,6 +229,9 @@ public class BookieRequestProcessor implements RequestProcessor {
                 case WRITE_LAC:
                     processWriteLacRequestV3(r,c);
                     break;
+                case SYNC:
+                    processSyncRequestV3(r,c);
+                    break;
                 case READ_LAC:
                     processReadLacRequestV3(r,c);
                     break;
@@ -267,6 +275,15 @@ public class BookieRequestProcessor implements RequestProcessor {
 
      private void processWriteLacRequestV3(final BookkeeperProtocol.Request r, final Channel c) {
         WriteLacProcessorV3 writeLac = new WriteLacProcessorV3(r, c, this);
+        if (null == writeThreadPool) {
+            writeLac.run();
+        } else {
+            writeThreadPool.submitOrdered(r.getAddRequest().getLedgerId(), writeLac);
+        }
+    }
+
+    private void processSyncRequestV3(final BookkeeperProtocol.Request r, final Channel c) {
+        SyncProcessorV3 writeLac = new SyncProcessorV3(r, c, this);
         if (null == writeThreadPool) {
             writeLac.run();
         } else {

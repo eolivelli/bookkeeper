@@ -40,6 +40,7 @@ import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.GenericCallback;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.LedgerMetadataListener;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.Processor;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.WriteCallback;
+import org.apache.bookkeeper.proto.DataFormats.LedgerType;
 import org.apache.bookkeeper.meta.HierarchicalLedgerManagerFactory;
 import org.apache.bookkeeper.meta.LedgerManager;
 import org.apache.bookkeeper.test.BookKeeperClusterTestCase;
@@ -453,7 +454,7 @@ public class ParallelLedgerRecoveryTest extends BookKeeperClusterTestCase {
         }
 
         @Override
-        public void addEntry(ByteBuf entry, final WriteCallback cb, Object ctx, byte[] masterKey)
+        public void addEntry(ByteBuf entry, final WriteCallback cb, Object ctx, byte[] masterKey, LedgerType ledgerType)
                 throws IOException, BookieException {
             super.addEntry(entry, new WriteCallback() {
                 @Override
@@ -465,7 +466,7 @@ public class ParallelLedgerRecoveryTest extends BookKeeperClusterTestCase {
                         cb.writeComplete(rc, ledgerId, entryId, lastAddSyncedEntry, addr, ctx);
                     }
                 }
-            }, ctx, masterKey);
+            }, ctx, masterKey, ledgerType);
         }
 
         @Override

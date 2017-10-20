@@ -32,6 +32,7 @@ import org.apache.bookkeeper.conf.ServerConfiguration;
 import org.apache.bookkeeper.net.BookieSocketAddress;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.GenericCallback;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.WriteCallback;
+import org.apache.bookkeeper.proto.DataFormats.LedgerType;
 import org.apache.bookkeeper.test.BookKeeperClusterTestCase;
 import org.junit.Test;
 import org.slf4j.Logger;
@@ -88,7 +89,7 @@ public class BookKeeperCloseTest extends BookKeeperClusterTestCase {
 
                 @Override
                 public void addEntry(ByteBuf entry, WriteCallback cb,
-                                     Object ctx, byte[] masterKey)
+                                     Object ctx, byte[] masterKey, LedgerType ledgerType)
                         throws IOException, BookieException {
                     try {
                         Thread.sleep(5000);
@@ -97,7 +98,7 @@ public class BookKeeperCloseTest extends BookKeeperClusterTestCase {
                         // and an exception would spam the logs
                         Thread.currentThread().interrupt();
                     }
-                    super.addEntry(entry, cb, ctx, masterKey);
+                    super.addEntry(entry, cb, ctx, masterKey, ledgerType);
                 }
 
                 @Override
