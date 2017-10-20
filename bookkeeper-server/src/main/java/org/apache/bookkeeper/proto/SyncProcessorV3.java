@@ -50,7 +50,7 @@ class SyncProcessorV3 extends PacketProcessorBaseV3 implements Runnable {
         final long startTimeNanos = MathUtils.nowInNano();
         SyncRequest syncRequest = request.getSyncRequest();
         long ledgerId = syncRequest.getLedgerId();
-        byte[] masterKey = new byte[0]; // TODO
+        byte[] masterKey = syncRequest.getMasterKey().toByteArray();
 
         final SyncResponse.Builder syncResponse = SyncResponse.newBuilder().setLedgerId(ledgerId);
 
@@ -124,6 +124,7 @@ class SyncProcessorV3 extends PacketProcessorBaseV3 implements Runnable {
         // doesn't return a response back to the caller.
         if (!status.equals(StatusCode.EOK)) {
             syncResponse.setStatus(status);
+            syncResponse.setLastAddSynced(BookieProtocol.INVALID_ENTRY_ID);
             return syncResponse.build();
         }
         return null;

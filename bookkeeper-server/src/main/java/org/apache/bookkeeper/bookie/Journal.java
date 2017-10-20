@@ -312,8 +312,9 @@ public class Journal extends BookieCriticalThread implements CheckpointSource {
         @Override
         public void run() {
             if (LOG.isDebugEnabled()) {
-                LOG.debug("Acknowledge Ledger: {}, Entry: {}", ledgerId, entryId);
+                LOG.debug("Acknowledge Ledger: {}, Entry: {}, lastAddSynced {}", ledgerId, entryId, lastAddSynced);
             }
+            LOG.info("Acknowledge Ledger: {}, Entry: {}, lastAddSynced {}", ledgerId, entryId, lastAddSynced);
             journalAddEntryStats.registerSuccessfulEvent(MathUtils.elapsedNanos(enqueueTime), TimeUnit.NANOSECONDS);
             cb.writeComplete(0, ledgerId, entryId, lastAddSynced, null, ctx);
         }
