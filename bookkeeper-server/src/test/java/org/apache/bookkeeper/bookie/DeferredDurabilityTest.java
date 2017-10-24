@@ -49,7 +49,7 @@ public class DeferredDurabilityTest extends BookKeeperClusterTestCase {
     final ByteBuf data = Unpooled.wrappedBuffer("foobar".getBytes());
 
     public DeferredDurabilityTest() {
-        super(4);
+        super(1);
         baseConf.setJournalFlushWhenQueueEmpty(false);
     }
 
@@ -117,7 +117,7 @@ public class DeferredDurabilityTest extends BookKeeperClusterTestCase {
                 for (int i = 0; i < numEntries - 2; i++) {
                     long entryId = result(wh.write(i, data.copy()));
                     assertEquals(i, entryId);
-                    // LAC must not advance on VD writes, it may advance because of grouping/flushQueueNotEmpty
+                    // LAC should not advance on VD writes, it may advance because of grouping/flushQueueNotEmpty
                     // but in this test it should not advance till the given entry id
                     assertTrue(wh.getLastAddConfirmed() < entryId);
                 }
@@ -240,6 +240,132 @@ public class DeferredDurabilityTest extends BookKeeperClusterTestCase {
                 .withPassword("testPasswd".getBytes())
                 .execute())) {
                 checkEntries(result(rh.read(0, lastAddConfirmedBeforeClose)), data.array());
+            }
+        }
+    }
+
+    @Test
+    public void testPiggyBackLastAddSyncedEntryOnWriteSyncLedger() throws Exception {
+        int numEntries = 100;
+        ClientConfiguration confWriter = new ClientConfiguration()
+            .setZkServers(zkUtil.getZooKeeperConnectString());
+        long lastEntryIdAfterSync;
+        try (BookKeeper bkc = BookKeeper
+            .newBuilder(confWriter)
+            .build()) {
+            long ledgerId;
+            try (WriteHandle wh
+                = result(bkc
+                    .newCreateLedgerOp()
+                    .withAckQuorumSize(1)
+                    .withEnsembleSize(1)
+                    .withWriteQuorumSize(1)
+                    .withLedgerType(LedgerType.VD_JOURNAL)
+                    .withPassword("testPasswd".getBytes())
+                    .execute())) {
+                LedgerHandle lh = (LedgerHandle) wh;
+                ledgerId = wh.getId();
+                for (int i = 0; i < numEntries - 2; i++) {
+                    long entryId = result(wh.append(data.copy()));
+                    assertEquals(i, entryId);
+                    // LAC should not advance on VD writes, it may advance because of grouping/flushQueueNotEmpty
+                    // but in this test it should not advance till the given entry id
+                    assertTrue(wh.getLastAddConfirmed() < entryId);
+                }
+
+                long entryId = result(wh.append(data.copy()));
+                assertEquals(numEntries - 2, entryId);
+                assertEquals(entryId, lh.getLastAddPushed());
+                // forcing a sync, LAC will be able to advance
+                long lastAddSynced = result(wh.sync());
+                assertEquals(entryId, lastAddSynced);
+                assertEquals(wh.getLastAddConfirmed(), lastAddSynced);
+                long lastEntryId = result(wh.append(data.copy()));
+                assertEquals(numEntries - 1, lastEntryId);
+                assertEquals(lastEntryId, lh.getLastAddPushed());
+
+                forceSyncOnAllBookies(bkc);
+
+                lastEntryIdAfterSync = result(wh.append(data.copy()));
+                assertEquals(numEntries, lastEntryIdAfterSync);
+                assertEquals(lastEntryIdAfterSync, lh.getLastAddPushed());
+
+                // lastAddConfirmed surely MUST advance
+                assertEquals(lastEntryIdAfterSync - 1, wh.getLastAddConfirmed());
+            }
+            try (ReadHandle rh = result(bkc.newOpenLedgerOp()
+                .withLedgerId(ledgerId)
+                .withPassword("testPasswd".getBytes())
+                .execute())) {
+                Iterable<LedgerEntry> entries = result(rh.read(0, lastEntryIdAfterSync - 1));
+                checkEntries(entries, data.array());
+            }
+        }
+    }
+
+    void forceSyncOnAllBookies(final BookKeeper bkc1) throws Exception {
+        // write a durable ledger, touching all of the bookies
+        try (final WriteHandle wh2 = result(bkc1.newCreateLedgerOp()
+            .withAckQuorumSize(numBookies)
+            .withEnsembleSize(numBookies)
+            .withWriteQuorumSize(numBookies)
+            .withLedgerType(LedgerType.PD_JOURNAL)
+            .withPassword("testPasswd".getBytes())
+            .execute())) {
+            result(wh2.append(data.copy()));
+        }
+    }
+
+    @Test
+    public void testRestartBookie() throws Exception {
+        int numEntries = 100;
+        ClientConfiguration confWriter = new ClientConfiguration()
+            .setZkServers(zkUtil.getZooKeeperConnectString());
+        long lastEntryIdAfterSync;
+        try (BookKeeper bkc = BookKeeper
+            .newBuilder(confWriter)
+            .build()) {
+            long ledgerId;
+            long lastAddConfirmedBeforeSync;
+            try (WriteHandle wh
+                = result(bkc
+                    .newCreateLedgerOp()
+                    .withAckQuorumSize(1)
+                    .withEnsembleSize(1)
+                    .withWriteQuorumSize(1)
+                    .withLedgerType(LedgerType.VD_JOURNAL)
+                    .withPassword("testPasswd".getBytes())
+                    .execute())) {
+                LedgerHandle lh = (LedgerHandle) wh;
+                ledgerId = wh.getId();
+                for (int i = 0; i < numEntries - 1 ; i++) {
+                    long entryId = result(wh.append(data.copy()));
+                    assertEquals(i, entryId);
+                    // LAC should not advance on VD writes, it may advance because of grouping/flushQueueNotEmpty
+                    // but in this test it should not advance till the given entry id
+                    assertTrue(wh.getLastAddConfirmed() < entryId);
+                }
+
+                lastAddConfirmedBeforeSync = wh.getLastAddConfirmed();
+                forceSyncOnAllBookies(bkc);
+
+                // restarting the bookie will probabily force the bookie to get the lastSyncedEntryId
+                // from LedgerStorage
+                restartBookies();
+
+                lastEntryIdAfterSync = result(wh.append(data.copy()));
+                assertEquals(numEntries - 1, lastEntryIdAfterSync);
+                assertEquals(lastEntryIdAfterSync, lh.getLastAddPushed());
+
+                // lastAddConfirmed surely MUST advance up to the last id written before the sync
+                assertEquals(lastAddConfirmedBeforeSync, wh.getLastAddConfirmed());
+            }
+            try (ReadHandle rh = result(bkc.newOpenLedgerOp()
+                .withLedgerId(ledgerId)
+                .withPassword("testPasswd".getBytes())
+                .execute())) {
+                Iterable<LedgerEntry> entries = result(rh.read(0, lastAddConfirmedBeforeSync));
+                checkEntries(entries, data.array());
             }
         }
     }
