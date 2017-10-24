@@ -21,6 +21,7 @@
 
 package org.apache.bookkeeper.bookie;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Stopwatch;
 import io.netty.buffer.ByteBuf;
@@ -1046,7 +1047,8 @@ public class Journal extends BookieCriticalThread implements CheckpointSource {
         LOG.info("Journal exited loop!");
     }
 
-    private SyncCursor getSyncCursorForLedger(long ledgerId) {
+    @VisibleForTesting
+    SyncCursor getSyncCursorForLedger(long ledgerId) {
         return lastAddSynched
             .computeIfAbsent(ledgerId, s-> new SyncCursor());
     }
