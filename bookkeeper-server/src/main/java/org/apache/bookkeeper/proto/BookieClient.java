@@ -246,7 +246,7 @@ public class BookieClient implements PerChannelBookieClientFactory {
                          final Object ctx) {
         closeLock.readLock().lock();
         try {
-            final PerChannelBookieClientPool client = lookupClient(addr, null);
+            final PerChannelBookieClientPool client = lookupClient(addr);
             if (client == null) {
                 cb.syncComplete(getRc(BKException.Code.BookieHandleNotAvailableException),
                                 ledgerId, BookieProtocol.INVALID_ENTRY_ID, addr, ctx);

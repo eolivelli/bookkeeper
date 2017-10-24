@@ -1714,11 +1714,11 @@ public class PerChannelBookieClient extends ChannelInboundHandlerAdapter {
         }
 
         @Override
-        public void writeComplete(int rc, long ledgerId, long entryId,
+        public void writeComplete(int rc, long ledgerId, long entryId, long lastAddSynced,
                                   BookieSocketAddress addr,
                                   Object ctx) {
             cancelTimeoutAndLogOp(rc);
-            originalCallback.writeComplete(rc, ledgerId, entryId, addr, ctx);
+            originalCallback.writeComplete(rc, ledgerId, entryId, lastAddSynced, addr, ctx);
             key.release();
             handle.recycle(this);
         }
@@ -1731,7 +1731,7 @@ public class PerChannelBookieClient extends ChannelInboundHandlerAdapter {
         @Override
         public void errorOut(final int rc) {
             errorOutAndRunCallback(
-                    () -> writeComplete(rc, ledgerId, entryId, addr, ctx));
+                    () -> writeComplete(rc, ledgerId, entryId, BookieProtocol.INVALID_ENTRY_ID, addr, ctx));
         }
 
         @Override
