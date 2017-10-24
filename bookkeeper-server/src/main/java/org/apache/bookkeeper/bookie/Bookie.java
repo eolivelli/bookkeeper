@@ -79,6 +79,7 @@ import org.apache.bookkeeper.meta.LedgerManager;
 import org.apache.bookkeeper.meta.LedgerManagerFactory;
 import org.apache.bookkeeper.net.BookieSocketAddress;
 import org.apache.bookkeeper.net.DNS;
+import org.apache.bookkeeper.proto.BookieProtocol;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.SyncCallback;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.WriteCallback;
 import org.apache.bookkeeper.proto.DataFormats.LedgerType;
@@ -830,6 +831,7 @@ public class Bookie extends BookieCriticalThread {
             public void process(int journalVersion, long offset, ByteBuffer recBuff) throws IOException {
                 long ledgerId = recBuff.getLong();
                 long entryId = recBuff.getLong();
+                LOG.info("process {}@{}",ledgerId,entryId);
                 try {
                     if (LOG.isDebugEnabled()) {
                         LOG.debug("Replay journal - ledger id : {}, entry id : {}.", ledgerId, entryId);
@@ -1439,7 +1441,25 @@ public class Bookie extends BookieCriticalThread {
         if (LOG.isTraceEnabled()) {
             LOG.trace("Adding {}@{}", entryId, ledgerId);
         }
-        getJournal(ledgerId).logAddEntry(entry, ledgerType, cb, ctx);
+        Journal journal = getJournal(ledgerId);
+        if (ledgerType == LedgerType.VD_JOURNAL) {
+            WriteCallback originalCallback = cb;
+            cb = (int rc, long ledgerId1, long entryId1, long lastAddSyncedEntry, BookieSocketAddress addr, Object ctx1) -> {
+                if (lastAddSyncedEntry == BookieProtocol.INVALID_ENTRY_ID) {
+                    try {
+                        lastAddSyncedEntry = ledgerStorage.getLastAddConfirmed(ledgerId1);
+                        LOG.info("recovered LastAddConfirmed {} for ledger {} from storage", lastAddSyncedEntry, ledgerId1);
+                        if (lastAddSyncedEntry != BookieProtocol.INVALID_ENTRY_ID) {
+                            journal.updateLastAddSynced(ledgerId1, lastAddSyncedEntry);
+                        }
+                    } catch (IOException error) {
+                        LOG.error("Could not read LastAddConfirmed for ledger " + ledgerId1, error);
+                    }
+                }
+                originalCallback.writeComplete(rc, ledgerId1, entryId1, lastAddSyncedEntry, addr, ctx1);
+            };
+        }
+        journal.logAddEntry(entry, ledgerType, cb, ctx);
     }
 
     /**
