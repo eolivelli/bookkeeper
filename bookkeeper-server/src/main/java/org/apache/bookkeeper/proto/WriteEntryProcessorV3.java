@@ -34,6 +34,7 @@ import org.apache.bookkeeper.proto.BookkeeperProtocol.AddResponse;
 import org.apache.bookkeeper.proto.BookkeeperProtocol.Request;
 import org.apache.bookkeeper.proto.BookkeeperProtocol.Response;
 import org.apache.bookkeeper.proto.BookkeeperProtocol.StatusCode;
+import org.apache.bookkeeper.proto.DataFormats.LedgerType;
 import org.apache.bookkeeper.util.MathUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -70,7 +71,7 @@ class WriteEntryProcessorV3 extends PacketProcessorBaseV3 {
 
         BookkeeperInternalCallbacks.WriteCallback wcb = new BookkeeperInternalCallbacks.WriteCallback() {
             @Override
-            public void writeComplete(int rc, long ledgerId, long entryId,
+            public void writeComplete(int rc, long ledgerId, long entryId, long lastAddSyncedEntry,
                                       BookieSocketAddress addr, Object ctx) {
                 if (BookieProtocol.EOK == rc) {
                     requestProcessor.addEntryStats.registerSuccessfulEvent(MathUtils.elapsedNanos(startTimeNanos),
@@ -78,6 +79,10 @@ class WriteEntryProcessorV3 extends PacketProcessorBaseV3 {
                 } else {
                     requestProcessor.addEntryStats.registerFailedEvent(MathUtils.elapsedNanos(startTimeNanos),
                             TimeUnit.NANOSECONDS);
+                }
+
+                if (lastAddSyncedEntry!= BookieProtocol.INVALID_ENTRY_ID) {
+                    addResponse.setLastAddSynced(lastAddSyncedEntry);
                 }
 
                 StatusCode status;
@@ -108,7 +113,8 @@ class WriteEntryProcessorV3 extends PacketProcessorBaseV3 {
             if (addRequest.hasFlag() && addRequest.getFlag().equals(AddRequest.Flag.RECOVERY_ADD)) {
                 requestProcessor.bookie.recoveryAddEntry(entryToAdd, wcb, channel, masterKey);
             } else {
-                requestProcessor.bookie.addEntry(entryToAdd, wcb, channel, masterKey);
+                LedgerType ledgerType = addRequest.hasLedgerType() ? addRequest.getLedgerType() : LedgerType.PD_JOURNAL;
+                requestProcessor.bookie.addEntry(entryToAdd, wcb, channel, masterKey, ledgerType);
             }
             status = StatusCode.EOK;
         } catch (IOException e) {

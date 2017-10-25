@@ -40,6 +40,7 @@ import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.GenericCallback;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.LedgerMetadataListener;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.Processor;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.WriteCallback;
+import org.apache.bookkeeper.proto.DataFormats.LedgerType;
 import org.apache.bookkeeper.meta.HierarchicalLedgerManagerFactory;
 import org.apache.bookkeeper.meta.LedgerManager;
 import org.apache.bookkeeper.test.BookKeeperClusterTestCase;
@@ -364,11 +365,12 @@ public class ParallelLedgerRecoveryTest extends BookKeeperClusterTestCase {
         lh.bk.getBookieClient().addEntry(lh.metadata.currentEnsemble.get(0), lh.getId(), lh.ledgerKey, entryId, toSend,
             new WriteCallback() {
                 @Override
-                public void writeComplete(int rc, long ledgerId, long entryId, BookieSocketAddress addr, Object ctx) {
+                public void writeComplete(int rc, long ledgerId, long entryId, long lastAddSyncedEntry,
+                    BookieSocketAddress addr, Object ctx) {
                     addSuccess.set(BKException.Code.OK == rc);
                     addLatch.countDown();
                 }
-            }, 0, BookieProtocol.FLAG_NONE);
+            }, 0, BookieProtocol.FLAG_NONE, lh.getLedgerType());
         addLatch.await();
         assertTrue("add entry 14 should succeed", addSuccess.get());
 
@@ -418,22 +420,24 @@ public class ParallelLedgerRecoveryTest extends BookKeeperClusterTestCase {
             private final int rc;
             private final long ledgerId;
             private final long entryId;
+            private final long lastAddSyncedEntry;
             private final BookieSocketAddress addr;
             private final Object ctx;
 
             WriteCallbackEntry(WriteCallback cb,
-                               int rc, long ledgerId, long entryId,
+                               int rc, long ledgerId, long entryId, long lastAddSyncedEntry,
                                BookieSocketAddress addr, Object ctx) {
                 this.cb = cb;
                 this.rc = rc;
                 this.ledgerId = ledgerId;
                 this.entryId = entryId;
+                this.lastAddSyncedEntry = lastAddSyncedEntry;
                 this.addr = addr;
                 this.ctx = ctx;
             }
 
             public void callback() {
-                cb.writeComplete(rc, ledgerId, entryId, addr, ctx);
+                cb.writeComplete(rc, ledgerId, entryId, lastAddSyncedEntry, addr, ctx);
             }
         }
 
@@ -450,19 +454,19 @@ public class ParallelLedgerRecoveryTest extends BookKeeperClusterTestCase {
         }
 
         @Override
-        public void addEntry(ByteBuf entry, final WriteCallback cb, Object ctx, byte[] masterKey)
+        public void addEntry(ByteBuf entry, final WriteCallback cb, Object ctx, byte[] masterKey, LedgerType ledgerType)
                 throws IOException, BookieException {
             super.addEntry(entry, new WriteCallback() {
                 @Override
-                public void writeComplete(int rc, long ledgerId, long entryId,
+                public void writeComplete(int rc, long ledgerId, long entryId, long lastAddSyncedEntry,
                                           BookieSocketAddress addr, Object ctx) {
                     if (delayAddResponse.get()) {
-                        delayQueue.add(new WriteCallbackEntry(cb, rc, ledgerId, entryId, addr, ctx));
+                        delayQueue.add(new WriteCallbackEntry(cb, rc, ledgerId, entryId, lastAddSyncedEntry, addr, ctx));
                     } else {
-                        cb.writeComplete(rc, ledgerId, entryId, addr, ctx);
+                        cb.writeComplete(rc, ledgerId, entryId, lastAddSyncedEntry, addr, ctx);
                     }
                 }
-            }, ctx, masterKey);
+            }, ctx, masterKey, ledgerType);
         }
 
         @Override
