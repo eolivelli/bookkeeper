@@ -208,10 +208,10 @@ class AuthHandler {
             public void operationComplete(int rc, Void v) {
                 if (rc == BKException.Code.OK) {
                     authenticated = true;
-                    LOG.info("Authentication success on server side");
+                    LOG.info("Authentication success on server side {} from {}", connectionPeer.getAuthorizedId(), connectionPeer.getRemoteAddr());
                 } else {
                     if (LOG.isDebugEnabled()) {
-                        LOG.debug("Authentication failed on server side");
+                        LOG.debug("Authentication failed on server side from {}", connectionPeer.getRemoteAddr());
                     }
                 }
             }

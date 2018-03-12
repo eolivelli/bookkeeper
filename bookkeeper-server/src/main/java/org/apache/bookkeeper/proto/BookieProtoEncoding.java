@@ -367,6 +367,7 @@ public class BookieProtoEncoding {
 
         @Override
         protected void encode(ChannelHandlerContext ctx, Object msg, List<Object> out) throws Exception {
+//            LOG.info("Received request {} from channel {} to encode.", msg, ctx.channel());
             if (msg instanceof BookkeeperProtocol.Request) {
                 out.add(REQ_V3.encode(msg, ctx.alloc()));
             } else if (msg instanceof BookieProtocol.Request) {
@@ -403,13 +404,14 @@ public class BookieProtoEncoding {
             buffer.markReaderIndex();
 
             if (usingV3Protocol) {
-                try {
+//                try {
                     out.add(REQ_V3.decode(buffer));
-                } catch (InvalidProtocolBufferException e) {
-                    usingV3Protocol = false;
-                    buffer.resetReaderIndex();
-                    out.add(REQ_PREV3.decode(buffer));
-                }
+//                } catch (InvalidProtocolBufferException e) {
+//                    LOG.error("error decoding msg "+msg, e);
+//                    usingV3Protocol = false;
+//                    buffer.resetReaderIndex();
+//                    out.add(REQ_PREV3.decode(buffer));
+//                }
             } else {
                 out.add(REQ_PREV3.decode(buffer));
             }
@@ -457,6 +459,7 @@ public class BookieProtoEncoding {
 
         @Override
         protected void decode(ChannelHandlerContext ctx, Object msg, List<Object> out) throws Exception {
+//            LOG.info("Received response {} from channel {} to decode.", msg, ctx.channel());
             if (LOG.isDebugEnabled()) {
                 LOG.debug("Received response {} from channel {} to decode.", msg, ctx.channel());
             }

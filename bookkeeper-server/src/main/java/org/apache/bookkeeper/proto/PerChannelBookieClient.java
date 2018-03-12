@@ -966,7 +966,7 @@ public class PerChannelBookieClient extends ChannelInboundHandlerAdapter {
                             + "but the client is closed, so it isn't important", cause);
                 }
             } else {
-                LOG.error("Unexpected exception caught by bookie client channel handler", cause);
+                LOG.error("Unexpected exception caught by bookie client channel handler, bookie is " + addr, cause);
             }
         }
 
