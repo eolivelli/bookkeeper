@@ -1132,6 +1132,24 @@ public class BookKeeperAdmin implements AutoCloseable {
      *            removed without prompt.
      * @return Returns true if format succeeds else false.
      */
+    @Deprecated
+    public static boolean format(ClientConfiguration conf,
+            boolean isInteractive, boolean force) throws Exception {
+        ServerConfiguration adapter = new ServerConfiguration(conf);
+        return format(adapter, isInteractive, force);
+    }
+
+    /**
+     * Format the BookKeeper metadata in zookeeper.
+     *
+     * @param isInteractive
+     *            Whether format should ask prompt for confirmation if old data
+     *            exists or not.
+     * @param force
+     *            If non interactive and force is true, then old data will be
+     *            removed without prompt.
+     * @return Returns true if format succeeds else false.
+     */
     public static boolean format(ServerConfiguration conf,
             boolean isInteractive, boolean force) throws Exception {
         return runFunctionWithMetadataBookieDriver(conf, driver -> {
