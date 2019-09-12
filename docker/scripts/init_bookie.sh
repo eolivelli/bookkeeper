@@ -51,7 +51,7 @@ function init_cluster() {
         if [ $? -eq 0 ]; then
             # bkInitLock created success, this is the successor to do znode init
             echo "Initializing bookkeeper cluster at service uri ${BK_metadataServiceUri}."
-            /opt/bookkeeper/bin/bkctl --service-uri ${BK_metadataServiceUri} cluster init
+            /opt/bookkeeper/bin/bkctl cluster init --service-uri ${BK_metadataServiceUri}
             if [ $? -eq 0 ]; then
                 echo "Successfully initialized bookkeeper cluster at service uri ${BK_metadataServiceUri}."
             else
