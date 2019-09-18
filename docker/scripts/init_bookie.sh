@@ -42,7 +42,9 @@ function init_cluster() {
         exit -1
     fi
 
+    set -x
     /opt/bookkeeper/bin/bookkeeper org.apache.zookeeper.ZooKeeperMain -server ${BK_zkServers} stat ${BK_STREAM_STORAGE_ROOT_PATH}
+    echo "return for zookeeper main =  $?"
     if [ $? -eq 0 ]; then
         echo "Metadata of cluster already exists, no need to init"
     else
