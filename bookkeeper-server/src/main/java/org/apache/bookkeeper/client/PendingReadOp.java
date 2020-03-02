@@ -203,15 +203,13 @@ class PendingReadOp implements ReadEntryCallback, SafeRunnable {
             if (BKException.Code.NoSuchEntryException == rc
                 || BKException.Code.NoSuchLedgerExistsException == rc) {
                 ++numBookiesMissingEntry;
-                if (LOG.isDebugEnabled()) {
-                    LOG.debug("No such entry found on bookie.  L{} E{} bookie: {}",
+
+                LOG.info("No such entry found on bookie.  L{} E{} bookie: {}",
                             lh.ledgerId, eId, host);
-                }
+
             } else {
-                if (LOG.isInfoEnabled()) {
-                    LOG.info("{} while reading L{} E{} from bookie: {}",
+                LOG.info("{} while reading L{} E{} from bookie: {}",
                             errMsg, lh.ledgerId, eId, host);
-                }
             }
 
             lh.recordReadErrorOnBookie(bookieIndex);
@@ -568,6 +566,7 @@ class PendingReadOp implements ReadEntryCallback, SafeRunnable {
         }
 
         int flags = isRecoveryRead ? BookieProtocol.FLAG_HIGH_PRIORITY : BookieProtocol.FLAG_NONE;
+        LOG.info("Send read for " + lh.ledgerId + " E" + entry.eId + " (bookieIndex " + bookieIndex + ") to " + to);
         clientCtx.getBookieClient().readEntry(to, lh.ledgerId, entry.eId,
                                               this, new ReadContext(bookieIndex, to, entry), flags);
     }
@@ -576,6 +575,7 @@ class PendingReadOp implements ReadEntryCallback, SafeRunnable {
     public void readEntryComplete(int rc, long ledgerId, final long entryId, final ByteBuf buffer, Object ctx) {
         final ReadContext rctx = (ReadContext) ctx;
         final LedgerEntryRequest entry = rctx.entry;
+        LOG.info("readEntryComplete " + ledgerId + " E" + entry + " rc " + rc + " bookieindex " + rctx.bookieIndex + " bookie " + rctx.to);
 
         if (rc != BKException.Code.OK) {
             entry.logErrorAndReattemptRead(rctx.bookieIndex, rctx.to, "Error: " + BKException.getMessage(rc), rc);
