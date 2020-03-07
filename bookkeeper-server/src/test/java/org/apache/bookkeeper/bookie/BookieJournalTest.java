@@ -47,12 +47,19 @@ import org.apache.bookkeeper.util.IOUtils;
 import org.apache.commons.io.FileUtils;
 import org.junit.After;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.Mockito;
+import org.powermock.api.mockito.PowerMockito;
+import org.powermock.core.classloader.annotations.PrepareForTest;
+import org.powermock.modules.junit4.PowerMockRunner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * Test the bookie journal.
  */
+@RunWith(PowerMockRunner.class)
+@PrepareForTest(JournalChannel.class)
 public class BookieJournalTest {
     private static final Logger LOG = LoggerFactory.getLogger(BookieJournalTest.class);
 
@@ -111,7 +118,7 @@ public class BookieJournalTest {
     /**
      * Generate fence entry.
      */
-    private ByteBuf generateFenceEntry(long ledgerId) {
+    private static ByteBuf generateFenceEntry(long ledgerId) {
         ByteBuf bb = Unpooled.buffer();
         bb.writeLong(ledgerId);
         bb.writeLong(Bookie.METAENTRY_ID_FENCE_KEY);
@@ -121,7 +128,7 @@ public class BookieJournalTest {
     /**
      * Generate meta entry with given master key.
      */
-    private ByteBuf generateMetaEntry(long ledgerId, byte[] masterKey) {
+    private static ByteBuf generateMetaEntry(long ledgerId, byte[] masterKey) {
         ByteBuf bb = Unpooled.buffer();
         bb.writeLong(ledgerId);
         bb.writeLong(Bookie.METAENTRY_ID_LEDGER_KEY);
@@ -172,7 +179,7 @@ public class BookieJournalTest {
 
     private static void moveToPosition(JournalChannel jc, long pos) throws IOException {
         jc.fc.position(pos);
-        jc.bc.position.set(pos);
+        jc.bc.position = pos;
         jc.bc.writeBufferStartPosition.set(pos);
     }
 
@@ -290,7 +297,13 @@ public class BookieJournalTest {
         return jc;
     }
 
-    private JournalChannel writeV5Journal(File journalDir, int numEntries, byte[] masterKey) throws Exception {
+    static JournalChannel writeV5Journal(File journalDir, int numEntries,
+                                         byte[] masterKey) throws Exception {
+        return writeV5Journal(journalDir, numEntries, masterKey, false);
+    }
+
+    static JournalChannel writeV5Journal(File journalDir, int numEntries,
+                                         byte[] masterKey, boolean corruptLength) throws Exception {
         long logId = System.currentTimeMillis();
         JournalChannel jc = new JournalChannel(journalDir, logId);
 
@@ -312,7 +325,11 @@ public class BookieJournalTest {
             lastConfirmed = i;
             length += i;
             ByteBuf lenBuff = Unpooled.buffer();
-            lenBuff.writeInt(packet.readableBytes());
+            if (corruptLength) {
+                lenBuff.writeInt(-1);
+            } else {
+                lenBuff.writeInt(packet.readableBytes());
+            }
             bc.write(lenBuff);
             bc.write(packet);
             packet.release();
@@ -784,4 +801,57 @@ public class BookieJournalTest {
             // correct behaviour
         }
     }
+
+    /**
+      * Test for fake IOException during read of Journal.
+      */
+    @Test
+    public void testJournalScanIOException() throws Exception {
+        File journalDir = createTempDir("bookie", "journal");
+        Bookie.checkDirectoryStructure(Bookie.getCurrentDirectory(journalDir));
+
+        File ledgerDir = createTempDir("bookie", "ledger");
+        Bookie.checkDirectoryStructure(Bookie.getCurrentDirectory(ledgerDir));
+
+        writeV4Journal(Bookie.getCurrentDirectory(journalDir), 100, "testPasswd".getBytes());
+
+        ServerConfiguration conf = TestBKConfiguration.newServerConfiguration();
+        conf.setJournalDirName(journalDir.getPath())
+                .setLedgerDirNames(new String[] { ledgerDir.getPath() })
+                .setMetadataServiceUri(null);
+
+        Journal.JournalScanner journalScanner = new DummyJournalScan();
+        FileChannel fileChannel = PowerMockito.mock(FileChannel.class);
+
+        PowerMockito.when(fileChannel.position(Mockito.anyLong()))
+                .thenThrow(new IOException());
+
+        PowerMockito.mockStatic(JournalChannel.class);
+        PowerMockito.when(JournalChannel.openFileChannel(Mockito.any(RandomAccessFile.class))).thenReturn(fileChannel);
+
+        Bookie b = new Bookie(conf);
+
+        for (Journal journal : b.journals) {
+            List<Long> journalIds = journal.listJournalIds(journal.getJournalDirectory(), null);
+
+            assertEquals(journalIds.size(), 1);
+
+            try {
+                journal.scanJournal(journalIds.get(0), Long.MAX_VALUE, journalScanner);
+                fail("Should not have been able to scan the journal");
+            } catch (Exception e) {
+                // Expected
+            }
+        }
+
+        b.shutdown();
+    }
+
+    private class DummyJournalScan implements Journal.JournalScanner {
+
+        @Override
+        public void process(int journalVersion, long offset, ByteBuffer entry) throws IOException {
+            LOG.warn("Journal Version : " + journalVersion);
+        }
+    };
 }

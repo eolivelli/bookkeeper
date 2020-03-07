@@ -19,7 +19,7 @@
   <parent>
     <artifactId>bookkeeper</artifactId>
     <groupId>org.apache.bookkeeper</groupId>
-    <version>4.10.0-SNAPSHOT</version>
+    <version>4.11.0-SNAPSHOT</version>
   </parent>
   <modelVersion>4.0.0</modelVersion>
   <artifactId>bookkeeper-stats-providers</artifactId>
@@ -29,22 +29,5 @@
     <module>codahale-metrics-provider</module>
     <module>prometheus-metrics-provider</module>
   </modules>
-
-  <profiles>
-    <profile>
-      <id>twitter</id>
-      <activation>
-        <property>
-          <name>twitter</name>
-        </property>
-      </activation>
-      <modules>
-        <!-- only building twitter stats providers when `-Dtwitter` is provided -->
-        <module>twitter-finagle-provider</module>
-        <module>twitter-science-provider</module>
-        <module>twitter-ostrich-provider</module>
-      </modules>
-    </profile>
-  </profiles>
 
 </project>

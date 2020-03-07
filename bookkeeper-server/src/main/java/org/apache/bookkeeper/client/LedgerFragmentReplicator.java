@@ -37,6 +37,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 
 import org.apache.bookkeeper.client.AsyncCallback.ReadCallback;
@@ -109,7 +110,8 @@ public class LedgerFragmentReplicator {
     private void replicateFragmentInternal(final LedgerHandle lh,
             final LedgerFragment lf,
             final AsyncCallback.VoidCallback ledgerFragmentMcb,
-            final Set<BookieSocketAddress> newBookies) throws InterruptedException {
+            final Set<BookieSocketAddress> newBookies,
+            final BiConsumer<Long, Long> onReadEntryFailureCallback) throws InterruptedException {
         if (!lf.isClosed()) {
             LOG.error("Trying to replicate an unclosed fragment;"
                       + " This is not safe {}", lf);
@@ -119,17 +121,17 @@ public class LedgerFragmentReplicator {
         }
         Long startEntryId = lf.getFirstStoredEntryId();
         Long endEntryId = lf.getLastStoredEntryId();
-        if (endEntryId == null) {
-            /*
-             * Ideally this should never happen if bookie failure is taken care
-             * of properly. Nothing we can do though in this case.
-             */
-            LOG.warn("Dead bookie (" + lf.getAddresses()
-                    + ") is still part of the current"
-                    + " active ensemble for ledgerId: " + lh.getId());
-            ledgerFragmentMcb.processResult(BKException.Code.OK, null, null);
-            return;
+
+        /*
+         * if startEntryId is INVALID_ENTRY_ID then endEntryId should be
+         * INVALID_ENTRY_ID and viceversa.
+         */
+        if (startEntryId == INVALID_ENTRY_ID ^ endEntryId == INVALID_ENTRY_ID) {
+            LOG.error("For LedgerFragment: {}, seeing inconsistent firstStoredEntryId: {} and lastStoredEntryId: {}",
+                    lf, startEntryId, endEntryId);
+            assert false;
         }
+
         if (startEntryId > endEntryId || endEntryId <= INVALID_ENTRY_ID) {
             // for open ledger which there is no entry, the start entry id is 0,
             // the end entry id is -1.
@@ -156,7 +158,7 @@ public class LedgerFragmentReplicator {
                 BKException.Code.LedgerRecoveryException);
         for (final Long entryId : entriesToReplicate) {
             recoverLedgerFragmentEntry(entryId, lh, ledgerFragmentEntryMcb,
-                    newBookies);
+                    newBookies, onReadEntryFailureCallback);
         }
     }
 
@@ -182,14 +184,15 @@ public class LedgerFragmentReplicator {
      */
     void replicate(final LedgerHandle lh, final LedgerFragment lf,
             final AsyncCallback.VoidCallback ledgerFragmentMcb,
-            final Set<BookieSocketAddress> targetBookieAddresses)
+            final Set<BookieSocketAddress> targetBookieAddresses,
+            final BiConsumer<Long, Long> onReadEntryFailureCallback)
             throws InterruptedException {
         Set<LedgerFragment> partionedFragments = splitIntoSubFragments(lh, lf,
                 bkc.getConf().getRereplicationEntryBatchSize());
         LOG.info("Replicating fragment {} in {} sub fragments.",
                 lf, partionedFragments.size());
         replicateNextBatch(lh, partionedFragments.iterator(),
-                ledgerFragmentMcb, targetBookieAddresses);
+                ledgerFragmentMcb, targetBookieAddresses, onReadEntryFailureCallback);
     }
 
     /**
@@ -198,7 +201,8 @@ public class LedgerFragmentReplicator {
     private void replicateNextBatch(final LedgerHandle lh,
             final Iterator<LedgerFragment> fragments,
             final AsyncCallback.VoidCallback ledgerFragmentMcb,
-            final Set<BookieSocketAddress> targetBookieAddresses) {
+            final Set<BookieSocketAddress> targetBookieAddresses,
+            final BiConsumer<Long, Long> onReadEntryFailureCallback) {
         if (fragments.hasNext()) {
             try {
                 replicateFragmentInternal(lh, fragments.next(),
@@ -211,11 +215,12 @@ public class LedgerFragmentReplicator {
                                 } else {
                                     replicateNextBatch(lh, fragments,
                                             ledgerFragmentMcb,
-                                            targetBookieAddresses);
+                                            targetBookieAddresses,
+                                            onReadEntryFailureCallback);
                                 }
                             }
 
-                        }, targetBookieAddresses);
+                        }, targetBookieAddresses, onReadEntryFailureCallback);
             } catch (InterruptedException e) {
                 ledgerFragmentMcb.processResult(
                         BKException.Code.InterruptedException, null, null);
@@ -243,6 +248,17 @@ public class LedgerFragmentReplicator {
 
         long firstEntryId = ledgerFragment.getFirstStoredEntryId();
         long lastEntryId = ledgerFragment.getLastStoredEntryId();
+
+        /*
+         * if firstEntryId is INVALID_ENTRY_ID then lastEntryId should be
+         * INVALID_ENTRY_ID and viceversa.
+         */
+        if (firstEntryId == INVALID_ENTRY_ID ^ lastEntryId == INVALID_ENTRY_ID) {
+            LOG.error("For LedgerFragment: {}, seeing inconsistent firstStoredEntryId: {} and lastStoredEntryId: {}",
+                    ledgerFragment, firstEntryId, lastEntryId);
+            assert false;
+        }
+
         long numberOfEntriesToReplicate = (lastEntryId - firstEntryId) + 1;
         long splitsWithFullEntries = numberOfEntriesToReplicate
                 / rereplicationEntryBatchSize;
@@ -289,7 +305,9 @@ public class LedgerFragmentReplicator {
     private void recoverLedgerFragmentEntry(final Long entryId,
             final LedgerHandle lh,
             final AsyncCallback.VoidCallback ledgerFragmentEntryMcb,
-            final Set<BookieSocketAddress> newBookies) throws InterruptedException {
+            final Set<BookieSocketAddress> newBookies,
+            final BiConsumer<Long, Long> onReadEntryFailureCallback) throws InterruptedException {
+        final long ledgerId = lh.getId();
         final AtomicInteger numCompleted = new AtomicInteger(0);
         final AtomicBoolean completed = new AtomicBoolean(false);
         final WriteCallback multiWriteCallback = new WriteCallback() {
@@ -328,6 +346,7 @@ public class LedgerFragmentReplicator {
                 if (rc != BKException.Code.OK) {
                     LOG.error("BK error reading ledger entry: " + entryId,
                             BKException.create(rc));
+                    onReadEntryFailureCallback.accept(ledgerId, entryId);
                     ledgerFragmentEntryMcb.processResult(rc, null, null);
                     return;
                 }
