@@ -232,12 +232,13 @@
         <version>${maven-surefire-plugin.version}</version>
         <configuration>
           <trimStackTrace>false</trimStackTrace>
-          <properties>
+          <redirectTestOutputToFile>false</redirectTestOutputToFile>
+<!--          <properties>
             <property>
               <name>listener</name>
               <value>org.apache.bookkeeper.common.testing.util.TimedOutTestsListener</value>
             </property>
-          </properties>
+          </properties>-->
         </configuration>
       </plugin>
       <plugin>
