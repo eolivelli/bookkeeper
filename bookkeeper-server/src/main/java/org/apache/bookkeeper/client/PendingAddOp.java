@@ -490,6 +490,7 @@ class PendingAddOp extends SafeRunnable implements WriteCallback {
          * joy that goes along with that.
          */
         if (hasRun && callbackTriggered) {
+            LOG.info("releasing toSend {}", this);
             ReferenceCountUtil.release(toSend);
             toSend = null;
         }

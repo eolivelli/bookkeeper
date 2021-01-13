@@ -22,6 +22,10 @@ package org.apache.bookkeeper.client;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.Unpooled;
+import io.netty.util.internal.PlatformDependent;
+import java.lang.management.ManagementFactory;
+import java.lang.management.MemoryMXBean;
 import lombok.extern.slf4j.Slf4j;
 import static org.apache.bookkeeper.common.concurrent.FutureUtils.result;
 import org.apache.bookkeeper.client.api.BookKeeper;
@@ -39,11 +43,12 @@ import org.junit.Test;
 public class SlowBookieMemoryConsumptionTest extends BookKeeperClusterTestCase {
 
     public SlowBookieMemoryConsumptionTest() {
-        super(2);        
+        super(2);
     }
 
     @Test
     public void slowBookie() throws Exception {
+        baseClientConf.setAddEntryTimeout(Integer.MAX_VALUE);
         try (BookKeeper bkc = BookKeeper.newBuilder(baseClientConf)
                 .build();) {
             try (WriteHandle wh = result(bkc.newCreateLedgerOp()
@@ -56,11 +61,13 @@ public class SlowBookieMemoryConsumptionTest extends BookKeeperClusterTestCase {
                 BookieId oneBookie = wh.getLedgerMetadata().getEnsembleAt(0).get(0);
                 BookieServer bookie = getBookieServer(oneBookie);
                 bookie.suspendProcessing();
-                for (int i = 0; i < 10000; i++) {
-                    ByteBuf payload = ByteBufAllocator.DEFAULT.heapBuffer(1024 * 1024);
+                MemoryMXBean mem = ManagementFactory.getMemoryMXBean();
+                for (int i = 0; i < 100000; i++) {
+                    ByteBuf payload = Unpooled.buffer(5 * 1024 * 1024);
+                    payload.ensureWritable(5* 1024 * 1024);
                     wh.append(payload);
                     if (i % 100 == 0) {
-                        log.info("sent {}", i);
+                        log.info("sent {} mem {} dir {}", i, mem.getHeapMemoryUsage().getUsed(), PlatformDependent.usedDirectMemory());
                     }
                 }
                 bookie.resumeProcessing();
