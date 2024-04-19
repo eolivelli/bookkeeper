@@ -93,6 +93,7 @@ class EntryLogManagerForSingleEntryLog extends EntryLogManagerBase {
         if (null == activeLogChannel) {
             // log channel can be null because the file is deferred to be created
             createNewLog(UNASSIGNED_LEDGERID, "because current active log channel has not initialized yet");
+            return activeLogChannel;
         }
 
         boolean reachEntryLogLimit = rollLog ? reachEntryLogLimit(activeLogChannel, entrySize)
@@ -261,6 +262,9 @@ class EntryLogManagerForSingleEntryLog extends EntryLogManagerBase {
 
     @Override
     public DefaultEntryLogger.BufferedLogChannel createNewLogForCompaction() throws IOException {
-        return entryLoggerAllocator.createNewLogForCompaction(selectDirForNextEntryLog());
+        BufferedLogChannel newLogForCompaction = entryLoggerAllocator.createNewLogForCompaction(
+                selectDirForNextEntryLog());
+        entryLoggerAllocator.setWritingCompactingLogId(newLogForCompaction.getLogId());
+        return newLogForCompaction;
     }
 }

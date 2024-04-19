@@ -68,6 +68,7 @@ import org.apache.bookkeeper.bookie.StateManager;
 import org.apache.bookkeeper.bookie.storage.EntryLogger;
 import org.apache.bookkeeper.bookie.storage.ldb.DbLedgerStorageDataFormats.LedgerData;
 import org.apache.bookkeeper.bookie.storage.ldb.KeyValueStorage.Batch;
+import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.common.util.Watcher;
 import org.apache.bookkeeper.conf.ServerConfiguration;
 import org.apache.bookkeeper.meta.LedgerManager;
@@ -76,7 +77,6 @@ import org.apache.bookkeeper.stats.Counter;
 import org.apache.bookkeeper.stats.OpStatsLogger;
 import org.apache.bookkeeper.stats.StatsLogger;
 import org.apache.bookkeeper.stats.ThreadRegistry;
-import org.apache.bookkeeper.util.MathUtils;
 import org.apache.bookkeeper.util.collections.ConcurrentLongHashMap;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang.mutable.MutableLong;
@@ -143,6 +143,7 @@ public class SingleDirectoryDbLedgerStorage implements CompactableLedgerStorage 
     private final long maxReadAheadBytesSize;
 
     private final Counter flushExecutorTime;
+    private final boolean singleLedgerDirs;
 
     public SingleDirectoryDbLedgerStorage(ServerConfiguration conf, LedgerManager ledgerManager,
                                           LedgerDirsManager ledgerDirsManager, LedgerDirsManager indexDirsManager,
@@ -156,13 +157,15 @@ public class SingleDirectoryDbLedgerStorage implements CompactableLedgerStorage 
         String ledgerBaseDir = ledgerDirsManager.getAllLedgerDirs().get(0).getPath();
         // indexBaseDir default use ledgerBaseDir
         String indexBaseDir = ledgerBaseDir;
-        if (CollectionUtils.isEmpty(indexDirsManager.getAllLedgerDirs())) {
-            log.info("indexDir is not specified, use default, creating single directory db ledger storage on {}",
+        if (CollectionUtils.isEmpty(indexDirsManager.getAllLedgerDirs())
+                || ledgerBaseDir.equals(indexDirsManager.getAllLedgerDirs().get(0).getPath())) {
+            log.info("indexDir is equals ledgerBaseDir, creating single directory db ledger storage on {}",
                     indexBaseDir);
         } else {
             // if indexDir is specified, set new value
             indexBaseDir = indexDirsManager.getAllLedgerDirs().get(0).getPath();
-            log.info("indexDir is specified, creating single directory db ledger storage on {}", indexBaseDir);
+            log.info("indexDir is specified a separate dir, creating single directory db ledger storage on {}",
+                    indexBaseDir);
         }
 
         StatsLogger ledgerIndexDirStatsLogger = statsLogger
@@ -172,6 +175,7 @@ public class SingleDirectoryDbLedgerStorage implements CompactableLedgerStorage 
         this.writeCacheMaxSize = writeCacheSize;
         this.writeCache = new WriteCache(allocator, writeCacheMaxSize / 2);
         this.writeCacheBeingFlushed = new WriteCache(allocator, writeCacheMaxSize / 2);
+        this.singleLedgerDirs = conf.getLedgerDirs().length == 1;
 
         readCacheMaxSize = readCacheSize;
         this.readAheadCacheBatchSize = readAheadCacheBatchSize;
@@ -268,7 +272,7 @@ public class SingleDirectoryDbLedgerStorage implements CompactableLedgerStorage 
     }
 
     @Override
-    public void forceGC(Boolean forceMajor, Boolean forceMinor) {
+    public void forceGC(boolean forceMajor, boolean forceMinor) {
         gcThread.enableForceGC(forceMajor, forceMinor);
     }
 
@@ -905,7 +909,9 @@ public class SingleDirectoryDbLedgerStorage implements CompactableLedgerStorage 
     public void flush() throws IOException {
         Checkpoint cp = checkpointSource.newCheckpoint();
         checkpoint(cp);
-        checkpointSource.checkpointComplete(cp, true);
+        if (singleLedgerDirs) {
+            checkpointSource.checkpointComplete(cp, true);
+        }
     }
 
     @Override
@@ -943,9 +949,30 @@ public class SingleDirectoryDbLedgerStorage implements CompactableLedgerStorage 
 
     @Override
     public void updateEntriesLocations(Iterable<EntryLocation> locations) throws IOException {
-        // Trigger a flush to have all the entries being compacted in the db storage
-        flush();
+        // Before updating the DB with the new location for the compacted entries, we need to
+        // make sure that there is no ongoing flush() operation.
+        // If there were a flush, we could have the following situation, which is highly
+        // unlikely though possible:
+        // 1. Flush operation has written the write-cache content into entry-log files
+        // 2. The DB location index is not yet updated
+        // 3. Compaction is triggered and starts compacting some of the recent files
+        // 4. Compaction will write the "new location" into the DB
+        // 5. The pending flush() will overwrite the DB with the "old location", pointing
+        //    to a file that no longer exists
+        //
+        // To avoid this race condition, we need that all the entries that are potentially
+        // included in the compaction round to have all the indexes already flushed into
+        // the DB.
+        // The easiest lightweight way to achieve this is to wait for any pending
+        // flush operation to be completed before updating the index with the compacted
+        // entries, by blocking on the flushMutex.
+        flushMutex.lock();
+        flushMutex.unlock();
 
+        // We don't need to keep the flush mutex locked here while updating the DB.
+        // It's fine to have a concurrent flush operation at this point, because we
+        // know that none of the entries being flushed was included in the compaction
+        // round that we are dealing with.
         entryLocationIndex.updateLocations(locations);
     }
 

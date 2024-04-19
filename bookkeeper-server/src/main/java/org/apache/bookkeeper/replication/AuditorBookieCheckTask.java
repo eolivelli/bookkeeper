@@ -68,6 +68,7 @@ public class AuditorBookieCheckTask extends AuditorTask {
             // went ahead, we'll report under replication and the user
             // wanted to avoid that(with lostBookieRecoveryDelay option)
             LOG.info("Audit already scheduled; skipping periodic bookie check");
+            auditorStats.getNumSkippingCheckTaskTimes().inc();
         }
     }
 
@@ -175,7 +176,7 @@ public class AuditorBookieCheckTask extends AuditorTask {
             InterruptedException {
         if (!isLedgerReplicationEnabled()) {
             LOG.info("LedgerReplication is disabled externally through Zookeeper, "
-                    + "since DISABLE_NODE ZNode is created, so waiting untill it is enabled");
+                    + "since DISABLE_NODE ZNode is created, so waiting until it is enabled");
             ReplicationEnableCb cb = new ReplicationEnableCb();
             ledgerUnderreplicationManager.notifyLedgerReplicationEnabled(cb);
             cb.await();

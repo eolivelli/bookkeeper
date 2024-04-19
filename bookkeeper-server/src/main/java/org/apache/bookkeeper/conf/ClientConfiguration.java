@@ -115,6 +115,7 @@ public class ClientConfiguration extends AbstractConfiguration<ClientConfigurati
     protected static final String RECOVERY_READ_BATCH_SIZE = "recoveryReadBatchSize";
     protected static final String REORDER_READ_SEQUENCE_ENABLED = "reorderReadSequenceEnabled";
     protected static final String STICKY_READS_ENABLED = "stickyReadSEnabled";
+    protected static final String RECOVERY_BATCH_READ_ENABLED = "recoveryBatchReadEnabled";
     // Add Parameters
     protected static final String OPPORTUNISTIC_STRIPING = "opportunisticStriping";
     protected static final String DELAY_ENSEMBLE_CHANGE = "delayEnsembleChange";
@@ -161,6 +162,9 @@ public class ClientConfiguration extends AbstractConfiguration<ClientConfigurati
     protected static final String ENSEMBLE_PLACEMENT_POLICY_ORDER_SLOW_BOOKIES =
         "ensemblePlacementPolicyOrderSlowBookies";
     protected static final String BOOKIE_ADDRESS_RESOLVER_ENABLED = "bookieAddressResolverEnabled";
+    // Use hostname to resolve local placement info
+    public static final String USE_HOSTNAME_RESOLVE_LOCAL_NODE_PLACEMENT_POLICY =
+        "useHostnameResolveLocalNodePlacementPolicy";
 
     // Stats
     protected static final String ENABLE_TASK_EXECUTION_STATS = "enableTaskExecutionStats";
@@ -198,6 +202,9 @@ public class ClientConfiguration extends AbstractConfiguration<ClientConfigurati
     // Logs
     protected static final String CLIENT_CONNECT_BOOKIE_UNAVAILABLE_LOG_THROTTLING =
             "clientConnectBookieUnavailableLogThrottling";
+
+    //For batch read api, it the batch read is not stable, we can fail back to single read by this config.
+    protected static final String BATCH_READ_ENABLED = "batchReadEnabled";
 
     /**
      * Construct a default client-side configuration.
@@ -1145,7 +1152,7 @@ public class ClientConfiguration extends AbstractConfiguration<ClientConfigurati
      * @return true if reorder read sequence is enabled, otherwise false.
      */
     public boolean isReorderReadSequenceEnabled() {
-        return getBoolean(REORDER_READ_SEQUENCE_ENABLED, false);
+        return getBoolean(REORDER_READ_SEQUENCE_ENABLED, true);
     }
 
     /**
@@ -1197,6 +1204,23 @@ public class ClientConfiguration extends AbstractConfiguration<ClientConfigurati
         return this;
     }
 
+    /**
+     * If recovery batch read enabled or not.
+     * @return
+     */
+    public boolean isRecoveryBatchReadEnabled() {
+        return getBoolean(RECOVERY_BATCH_READ_ENABLED, false);
+    }
+
+    /**
+     * Enable/disable recovery batch read.
+     * @param enabled
+     * @return
+     */
+    public ClientConfiguration setRecoveryBatchReadEnabled(boolean enabled) {
+        setProperty(RECOVERY_BATCH_READ_ENABLED, enabled);
+        return this;
+    }
     /**
      * Get Ensemble Placement Policy Class.
      *
@@ -1312,6 +1336,22 @@ public class ClientConfiguration extends AbstractConfiguration<ClientConfigurati
     public ClientConfiguration setBookieAddressResolverEnabled(boolean enabled) {
         setProperty(BOOKIE_ADDRESS_RESOLVER_ENABLED, enabled);
         return this;
+    }
+
+    /**
+     * Set the flag to use hostname to resolve local node placement policy.
+     * @param useHostnameResolveLocalNodePlacementPolicy
+     */
+    public void setUseHostnameResolveLocalNodePlacementPolicy(boolean useHostnameResolveLocalNodePlacementPolicy) {
+        setProperty(USE_HOSTNAME_RESOLVE_LOCAL_NODE_PLACEMENT_POLICY, useHostnameResolveLocalNodePlacementPolicy);
+    }
+
+    /**
+     * Get whether to use hostname to resolve local node placement policy.
+     * @return
+     */
+    public boolean getUseHostnameResolveLocalNodePlacementPolicy() {
+        return getBoolean(USE_HOSTNAME_RESOLVE_LOCAL_NODE_PLACEMENT_POLICY, false);
     }
 
     /**
@@ -2056,6 +2096,15 @@ public class ClientConfiguration extends AbstractConfiguration<ClientConfigurati
      */
     public long getClientConnectBookieUnavailableLogThrottlingMs() {
         return getLong(CLIENT_CONNECT_BOOKIE_UNAVAILABLE_LOG_THROTTLING, 5_000L);
+    }
+
+    public ClientConfiguration setBatchReadEnabled(boolean enable) {
+        setProperty(BATCH_READ_ENABLED, enable);
+        return this;
+    }
+
+    public boolean isBatchReadEnabled() {
+        return getBoolean(BATCH_READ_ENABLED, true);
     }
 
     @Override

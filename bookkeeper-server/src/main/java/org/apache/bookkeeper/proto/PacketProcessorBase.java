@@ -22,9 +22,9 @@ import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelPromise;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.proto.BookieProtocol.Request;
 import org.apache.bookkeeper.stats.OpStatsLogger;
-import org.apache.bookkeeper.util.MathUtils;
 import org.apache.bookkeeper.util.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -122,13 +122,15 @@ abstract class PacketProcessorBase<T extends Request> implements Runnable {
         }
 
         if (channel.isActive()) {
-            ChannelPromise promise = channel.voidPromise();
+            final ChannelPromise promise;
             if (logger.isDebugEnabled()) {
                 promise = channel.newPromise().addListener(future -> {
                     if (!future.isSuccess()) {
                         logger.debug("Netty channel write exception. ", future.cause());
                     }
                 });
+            } else {
+                promise = channel.voidPromise();
             }
             channel.writeAndFlush(response, promise);
         } else {

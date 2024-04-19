@@ -79,14 +79,14 @@ public class VertxHttpServer implements HttpServer {
         CompletableFuture<AsyncResult<io.vertx.core.http.HttpServer>> future = new CompletableFuture<>();
         VertxHttpHandlerFactory handlerFactory = new VertxHttpHandlerFactory(httpServiceProvider);
         Router router = Router.router(vertx);
-        router.route().handler(BodyHandler.create());
+        router.route().handler(BodyHandler.create(false));
         HttpRouter<VertxAbstractHandler> requestRouter = new HttpRouter<VertxAbstractHandler>(handlerFactory) {
             @Override
             public void bindHandler(String endpoint, VertxAbstractHandler handler) {
-                router.get(endpoint).handler(handler);
-                router.put(endpoint).handler(handler);
-                router.post(endpoint).handler(handler);
-                router.delete(endpoint).handler(handler);
+                router.get(endpoint).blockingHandler(handler);
+                router.put(endpoint).blockingHandler(handler);
+                router.post(endpoint).blockingHandler(handler);
+                router.delete(endpoint).blockingHandler(handler);
             }
         };
         requestRouter.bindAll();
