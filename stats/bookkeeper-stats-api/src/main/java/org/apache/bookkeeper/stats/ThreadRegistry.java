@@ -26,6 +26,24 @@ import java.util.concurrent.ConcurrentMap;
  */
 public class ThreadRegistry {
     private static ConcurrentMap<Long, ThreadPoolThread> threadPoolMap = new ConcurrentHashMap<>();
+    private static ConcurrentMap<String, Integer> threadPoolThreadMap = new ConcurrentHashMap<>();
+
+    /*
+    Threads can register themselves as their first act before carrying out
+    any work. By calling this method, the ThreadPoolThread is incremented
+    for the given thread pool.
+    */
+    public static void register(String threadPool) {
+        register(threadPool, false);
+    }
+
+    public static void register(String threadPool, boolean force) {
+        Integer threadPoolThread = threadPoolThreadMap.compute(threadPool, (k, v) -> v == null ? 0 : v + 1);
+        if (force) {
+            threadPoolMap.remove(Thread.currentThread().getId());
+        }
+        register(threadPool, threadPoolThread, Thread.currentThread().getId());
+    }
 
     /*
         Threads can register themselves as their first act before carrying out
@@ -40,7 +58,11 @@ public class ThreadRegistry {
      */
     public static void register(String threadPool, int threadPoolThread, long threadId) {
         ThreadPoolThread tpt = new ThreadPoolThread(threadPool, threadPoolThread, threadId);
-        threadPoolMap.put(threadId, tpt);
+        ThreadPoolThread previous = threadPoolMap.put(threadId, tpt);
+        if (previous != null) {
+            throw new IllegalStateException("Thread " + threadId + " was already registered in thread pool "
+                    + previous.threadPool + " as thread " + previous.ordinal);
+        }
     }
 
     /*
@@ -48,6 +70,7 @@ public class ThreadRegistry {
      */
     public static void clear() {
         threadPoolMap.clear();
+        threadPoolThreadMap.clear();
     }
 
     /*
